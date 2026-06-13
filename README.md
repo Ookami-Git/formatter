@@ -193,12 +193,68 @@ variable "tags" {
 
 | Type | Rendu | Notes |
 |---|---|---|
-| `string` | Champ texte | — |
-| `integer` / `number` | Champ numérique | Step=1 pour integer, step=any pour number |
-| `boolean` | Toggle switch | — |
-| `select` | Liste déroulante | Requiert `options` ou `validation` Terraform |
-| `object` | Carte imbriquée | Sous-champs récursifs |
-| `array` | Liste dynamique | Supporte `itemType` (string, object, etc.) |
+| `string` | Champ texte | Supporte la validation par expression régulière (`validation.regex`). |
+| `integer` / `number` | Champ numérique | Step=1 pour integer, step=any pour number. |
+| `boolean` | Toggle switch | Rendu sous forme de bouton à bascule. |
+| `select` | Liste déroulante | Requiert `options` (ou extrait des blocs de validation Terraform). |
+| `object` | Carte imbriquée | Permet des sous-champs récursifs via la propriété `fields`. |
+| `array` | Liste dynamique | Supporte `itemType`. Si `itemType: object`, requiert la propriété `fields`. |
+
+---
+
+### 📋 Structure détaillée du Schéma (YAML / JSON)
+
+Un schéma de configuration valide est constitué d'un objet racine contenant les métadonnées globales, suivi d'une liste de définitions de champs.
+
+#### Structure racine
+
+| Propriété | Type | Description |
+| :--- | :--- | :--- |
+| `title` | `string` | Le titre principal affiché en haut du formulaire. |
+| `description` | `string` | Un texte explicatif affiché sous le titre (supporte le HTML basique). |
+| `outputFormat` | `string` | Format de sortie présélectionné par défaut (`json`, `yaml`, `hcl`). |
+| `fields` | `array` | Liste des définitions de champs composant le formulaire. |
+
+---
+
+#### Propriétés d'un champ (`field`)
+
+Chaque élément du tableau `fields` comporte les propriétés suivantes :
+
+| Propriété | Type | Rendu / Usage | Description |
+| :--- | :--- | :--- | :--- |
+| `name` | `string` | **Requis** | Identifiant technique du champ (clé utilisée dans le document généré en sortie). |
+| `type` | `string` | **Requis** | Type de donnée et de composant UI (`string`, `integer`, `number`, `boolean`, `select`, `object`, `array`). |
+| `label` | `string` | Optionnel | Libellé convivial affiché à l'utilisateur. Par défaut, le `name` converti en Title Case (ex: `app_name` ➜ `Nom de l'application`). |
+| `description` | `string` | Optionnel | Description d'aide ou tooltip affiché sous le champ de saisie. |
+| `required` | `boolean` | Optionnel | Rend le champ obligatoire (ajoute un astérisque rouge et bloque la validation). |
+| `default` | `any` | Optionnel | Valeur par défaut préremplie dans le formulaire au chargement. |
+| `options` | `array` | Requis si `select` | Liste d'options sous la forme simple `["dev", "prod"]` ou d'objets `[{"value": "dev", "label": "Développement"}]`. |
+| `itemType` | `string` | Requis si `array` | Type des éléments du tableau (`string`, `integer`, `number`, `boolean`, `object`). |
+| `fields` | `array` | Requis si `object` (ou `array` d'objets) | Liste récursive des sous-champs composant la structure imbriquée. |
+| `validation` | `object` | Optionnel | Règles de validation. Supporté pour les champs de type `string` (voir ci-dessous). |
+
+---
+
+#### Validation de format (Expressions régulières / Regex)
+
+La validation s'applique aux champs de type `string` grâce à l'objet `validation` :
+
+```yaml
+fields:
+  - name: email
+    label: "Adresse Email"
+    type: string
+    required: true
+    validation:
+      regex: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+      message: "Veuillez entrer une adresse email valide."
+```
+
+| Propriété | Type | Description |
+| :--- | :--- | :--- |
+| `regex` | `string` | **Requis** | Le motif regex de validation (ex: `^[a-z0-9-]+$`). Attention à doubler les antislashs en YAML/JSON (`\\`). |
+| `message` | `string` | Optionnel | Le message d'erreur affiché en rouge sous le champ lorsque la regex échoue. |
 
 ---
 
