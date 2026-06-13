@@ -7,7 +7,7 @@ RUN apk add --no-cache git
 # Set production environment
 ENV NODE_ENV=production
 ENV PORT=3000
-ENV CONFIG_PATH=/app/config/schema.yaml
+ENV CONFIG_PATH=/app/examples/schema.yaml
 
 # Create application directory
 WORKDIR /app
@@ -18,10 +18,11 @@ RUN npm install --omit=dev && npm cache clean --force
 
 # Copy application source code
 COPY server.js ./
+COPY lib ./lib
 COPY public ./public
 
 # Copy default schema configuration
-COPY config ./config
+COPY examples ./examples
 
 # Ensure the config folder has appropriate permissions so that if mounted it can be accessed
 RUN chmod -R 755 /app

@@ -67,7 +67,7 @@ npm start
 |---|---|---|---|
 | `PORT` | Port d'écoute du serveur HTTP | `3000` | Non |
 | `CONFIG_SOURCE` | Source de la configuration : `local` ou `git` | `local` | Non |
-| `CONFIG_PATH` | Chemin du fichier de configuration (mode `local`) | `/app/config/schema.yaml` | Non |
+| `CONFIG_PATH` | Chemin du fichier de configuration (mode `local`) | `/app/examples/schema.yaml` | Non |
 | `GIT_REPO_URL` | URL du dépôt Git à cloner (sans token) | — | Oui si `git` |
 | `GIT_TOKEN` | Token d'authentification Git (PAT GitHub/GitLab). Injecté automatiquement dans l'URL | — | Non (repos privés) |
 | `GIT_BRANCH` | Branche Git à utiliser | `main` | Non |
@@ -220,12 +220,14 @@ helm install my-form ./helm \
 | `image.repository` | Image Docker | `ghcr.io/ookami-git/formatter` |
 | `image.tag` | Tag de l'image | `appVersion` du chart |
 | `config.source` | Source : `local` ou `git` | `local` |
-| `config.path` | Chemin de config (mode local) | `/app/config/schema.yaml` |
+| `config.path` | Chemin de config (mode local/image) | `/app/config/schema.yaml` (si mountConfigMap: true)<br>`/app/examples/schema.yaml` (si false) |
 | `config.port` | Port du serveur | `3000` |
+| `config.mountConfigMap` | Activer le montage d'un ConfigMap ou Secret (mode local) | `true` |
 | `config.git.repoUrl` | URL du repo Git | `""` |
 | `config.git.branch` | Branche Git | `main` |
 | `config.git.configPath` | Fichier de config dans le repo | `variables.tf` |
 | `configMapName` | Nom d'un ConfigMap existant (optionnel) | `""` |
+| `secretName` | Nom d'un Secret existant (optionnel, priorité sur configMapName) | `""` |
 | `schemaContent` | Contenu YAML du schéma (si pas de ConfigMap externe) | Schéma exemple |
 | `service.type` | Type de service K8s | `ClusterIP` |
 | `service.port` | Port du service | `80` |
@@ -278,7 +280,7 @@ Aucune configuration de secrets n'est nécessaire — le workflow utilise `GITHU
 formatter/
 ├── .github/workflows/
 │   └── docker-publish.yml    # CI/CD → build & push Docker
-├── config/                   # Schémas de configuration par défaut
+├── examples/                 # Schémas de configuration d'exemple
 │   ├── schema.yaml
 │   ├── multidoc-schema.yaml
 │   └── variables.tf

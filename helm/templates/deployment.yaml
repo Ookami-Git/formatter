@@ -66,16 +66,21 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- if eq .Values.config.source "local" }}
+          {{- if and (eq .Values.config.source "local") .Values.config.mountConfigMap }}
           volumeMounts:
             - name: config-volume
               mountPath: /app/config
           {{- end }}
-      {{- if eq .Values.config.source "local" }}
+      {{- if and (eq .Values.config.source "local") .Values.config.mountConfigMap }}
       volumes:
         - name: config-volume
+          {{- if .Values.secretName }}
+          secret:
+            secretName: {{ .Values.secretName }}
+          {{- else }}
           configMap:
             name: {{ .Values.configMapName | default (printf "%s-schema" (include "dynamic-form.fullname" .)) }}
+          {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

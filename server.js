@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3000;
 
 // Configuration sources
 const CONFIG_SOURCE = process.env.CONFIG_SOURCE || 'local'; // 'local' or 'git'
-const CONFIG_PATH = process.env.CONFIG_PATH || path.join(__dirname, 'config', 'schema.yaml');
+const CONFIG_PATH = process.env.CONFIG_PATH || path.join(__dirname, 'examples', 'schema.yaml');
 
 // Git settings
 const GIT_REPO_URL_RAW = process.env.GIT_REPO_URL;

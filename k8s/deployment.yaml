@@ -92,7 +92,7 @@ spec:
             - name: CONFIG_SOURCE
               value: "local" # Modifiez par "git" pour activer la récupération Git
             - name: CONFIG_PATH
-              value: "/app/config/schema.yaml"
+              value: "/app/config/schema.yaml" # Utilisez "/app/examples/schema.yaml" si vous ne montez pas de volume et voulez utiliser l'exemple de l'image
             # Configurations optionnelles si CONFIG_SOURCE: "git"
             # - name: GIT_REPO_URL
             #   value: "https://github.com/votre-compte/votre-depot.git"

@@ -23,11 +23,18 @@ config:
   # -- Source de configuration : "local" ou "git"
   source: local
 
-  # -- Chemin du fichier de configuration dans le container (mode local)
+  # -- Chemin du fichier de configuration dans le container
+  #    - Si mountConfigMap est true, ce chemin doit être sous /app/config/ (ex: /app/config/schema.yaml)
+  #    - Si mountConfigMap est false, ce chemin doit pointer vers le fichier intégré (ex: /app/examples/schema.yaml)
   path: /app/config/schema.yaml
 
   # -- Port d'écoute du serveur
   port: 3000
+
+  # -- Activer le montage d'un ConfigMap ou d'un Secret (mode local uniquement)
+  #    Si true, un volume sera monté dans le container. Si false, l'application
+  #    utilisera le schéma intégré dans l'image (ex: /app/examples/schema.yaml).
+  mountConfigMap: true
 
   # ── Mode Git ──────────────────────────────
   git:
@@ -44,10 +51,12 @@ config:
     #    Si défini, il est utilisé à la place de git.token
     existingSecret: ""
 
-# ── ConfigMap embarqué (mode local uniquement) ──
-# Si config.source=local, un ConfigMap sera créé avec ce contenu.
-# Vous pouvez aussi le remplacer par un ConfigMap existant (voir configMapName).
+# ── ConfigMap / Secret externe ou embarqué (mode local uniquement) ──
+# Si config.source=local et config.mountConfigMap=true, un ConfigMap/Secret sera monté.
+# Vous pouvez spécifier un ConfigMap existant :
 configMapName: ""
+# Ou un Secret existant (prend la priorité sur configMapName si défini) :
+secretName: ""
 
 # -- Contenu du schéma injecté dans le ConfigMap (mode local)
 schemaContent: |
