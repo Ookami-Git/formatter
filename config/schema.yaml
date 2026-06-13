@@ -1,0 +1,65 @@
+title: "Configuration Déploiement Microservice"
+outputFormat: "yaml"
+fields:
+  - name: appName
+    label: "Nom de l'application"
+    type: "string"
+    default: "mon-microservice"
+    required: true
+    description: "Le nom unique utilisé pour identifier le déploiement."
+  
+  - name: replicaCount
+    label: "Nombre de Réplicas"
+    type: "integer"
+    default: 3
+    required: true
+    description: "Le nombre d'instances du pod à exécuter en parallèle."
+
+  - name: port
+    label: "Port du Conteneur"
+    type: "integer"
+    default: 8080
+    required: true
+    description: "Le port sur lequel l'application écoute."
+
+  - name: environment
+    label: "Environnement"
+    type: "select"
+    default: "production"
+    options: ["development", "staging", "production"]
+    description: "L'environnement cible pour le déploiement."
+
+  - name: enableIngress
+    label: "Activer Ingress (Routeur)"
+    type: "boolean"
+    default: true
+    description: "Permet d'exposer l'application vers l'extérieur du cluster."
+
+  - name: resources
+    label: "Limites de Ressources"
+    type: "object"
+    description: "Définition des allocations de ressources CPU et Mémoire."
+    fields:
+      - name: cpuLimit
+        label: "Limite CPU"
+        type: "string"
+        default: "500m"
+      - name: memoryLimit
+        label: "Limite Mémoire"
+        type: "string"
+        default: "512Mi"
+
+  - name: environmentVariables
+    label: "Variables d'Environnement"
+    type: "array"
+    itemType: "object"
+    description: "Variables d'environnement injectées dans le conteneur."
+    fields:
+      - name: name
+        label: "Nom de la variable"
+        type: "string"
+        required: true
+      - name: value
+        label: "Valeur"
+        type: "string"
+        required: true

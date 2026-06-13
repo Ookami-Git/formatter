@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Générateur de Configuration Dynamique</title>
+
+  <!-- Prism CSS for syntax highlighting -->
+  <link rel="stylesheet" href="/lib/prism.css">
+  <!-- Custom Styling -->
+  <link rel="stylesheet" href="/style.css">
+
+  <!-- Preload fonts from Google Fonts for premium typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@300;400;500;600;700&display=swap"
+    rel="stylesheet">
+</head>
+
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <div class="header-main">
+        <div class="brand">
+          <div class="logo-icon">⚡</div>
+          <div class="brand-text">
+            <h1 id="app-title">Formulaire Dynamique</h1>
+            <p id="app-description" class="subtitle">Chargement de la configuration...</p>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <div class="status-indicator">
+            <span class="status-dot green"></span>
+            <span id="schema-status">Prêt</span>
+          </div>
+          <button id="btn-refresh" class="btn btn-secondary" title="Recharger le schéma depuis le serveur (ConfigMap)">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+            </svg>
+            Rafraîchir
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="app-content">
+      <!-- Left Panel: The dynamic form -->
+      <section class="panel panel-form" aria-labelledby="form-heading">
+        <div class="panel-header">
+          <h2 id="form-heading">Formulaire de saisie</h2>
+          <span class="badge">Édition</span>
+        </div>
+        <!-- Tab bar container for multi-doc YAML -->
+        <div id="tab-bar-container" class="tab-bar-container" style="display: none;"></div>
+        <div class="panel-body">
+          <form id="dynamic-form" autocomplete="off" onsubmit="event.preventDefault();">
+            <div id="form-fields-container">
+              <!-- Dynamically generated fields will be inserted here -->
+              <div class="loading-spinner-container">
+                <div class="spinner"></div>
+                <p>Génération du formulaire...</p>
+              </div>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <!-- Right Panel: The live formatted output -->
+      <section class="panel panel-output" aria-labelledby="output-heading">
+        <div class="panel-header">
+          <h2 id="output-heading">Fichier généré (Live)</h2>
+          <div class="output-controls">
+            <!-- Keep Empty Checkbox -->
+            <label class="setting-checkbox"
+              style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--text-muted); cursor: pointer; user-select: none; margin-right: 12px;">
+              <input type="checkbox" id="chk-keep-empty" style="cursor: pointer; accent-color: var(--color-primary);">
+              Garder les valeurs vides
+            </label>
+            <!-- Format selector -->
+            <div class="format-toggle" role="group" aria-label="Format de sortie">
+              <button id="format-yaml" class="toggle-btn" data-format="yaml">YAML</button>
+              <button id="format-json" class="toggle-btn" data-format="json">JSON</button>
+              <button id="format-hcl" class="toggle-btn" data-format="hcl">HCL</button>
+            </div>
+            <!-- Copy button -->
+            <button id="btn-copy" class="btn btn-primary btn-sm" title="Copier le code">
+              <svg class="icon icon-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              <span id="copy-text">Copier</span>
+            </button>
+            <!-- Import button -->
+            <button id="btn-import" class="btn btn-secondary btn-sm" title="Importer une configuration existante">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              <span id="import-text">Importer</span>
+            </button>
+          </div>
+        </div>
+        <!-- Import container (hidden by default) -->
+        <div id="import-container" class="import-container" style="display: none;">
+          <div class="import-header">
+            <span class="import-title">Coller une configuration existante (JSON, YAML ou HCL/tfvars)</span>
+            <button id="btn-cancel-import" class="btn btn-secondary btn-sm" type="button">Annuler</button>
+          </div>
+          <textarea id="import-textarea" class="import-textarea" placeholder="Collez ici votre JSON, YAML ou HCL/tfvars..."></textarea>
+          <div class="import-actions">
+            <button id="btn-apply-import" class="btn btn-primary btn-sm" type="button">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              Appliquer au formulaire
+            </button>
+          </div>
+        </div>
+        <div class="panel-body code-viewer-body">
+          <div class="code-container">
+            <pre
+              class="line-numbers"><code id="code-output" class="language-yaml"># Les données du formulaire s'afficheront ici en direct...</code></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <div class="footer-content">
+        <div class="config-source-info">
+          Source : <span id="config-path">Chargement...</span>
+        </div>
+        <div class="footer-meta">
+          Docker & Kubernetes Ready • Live Form Formatter
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Load dependencies locally -->
+  <script src="/lib/js-yaml.min.js"></script>
+  <script src="/lib/prism.js"></script>
+  <script src="/lib/prism-yaml.min.js"></script>
+  <script src="/lib/prism-json.min.js"></script>
+  <script src="/lib/prism-hcl.min.js"></script>
+
+  <!-- Application logic -->
+  <script src="/app.js"></script>
+</body>
+
+</html>

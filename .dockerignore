@@ -1,0 +1,11 @@
+node_modules
+npm-debug.log*
+.git
+.github
+.gitignore
+.dockerignore
+git-repo
+k8s
+helm
+*.md
+LICENSE

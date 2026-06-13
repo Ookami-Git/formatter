@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dynamic-form.fullname" . }}
+  labels:
+    {{- include "dynamic-form.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "dynamic-form.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "dynamic-form.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ include "dynamic-form.imageTag" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.config.port }}
+              protocol: TCP
+          env:
+            - name: PORT
+              value: {{ .Values.config.port | quote }}
+            - name: CONFIG_SOURCE
+              value: {{ .Values.config.source | quote }}
+            - name: CONFIG_PATH
+              value: {{ .Values.config.path | quote }}
+            {{- if eq .Values.config.source "git" }}
+            - name: GIT_REPO_URL
+              value: {{ .Values.config.git.repoUrl | quote }}
+            - name: GIT_BRANCH
+              value: {{ .Values.config.git.branch | quote }}
+            - name: GIT_CONFIG_PATH
+              value: {{ .Values.config.git.configPath | quote }}
+            {{- if or .Values.config.git.token .Values.config.git.existingSecret }}
+            - name: GIT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.config.git.existingSecret | default (printf "%s-git-token" (include "dynamic-form.fullname" .)) }}
+                  key: GIT_TOKEN
+            {{- end }}
+            {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- if eq .Values.config.source "local" }}
+          volumeMounts:
+            - name: config-volume
+              mountPath: /app/config
+          {{- end }}
+      {{- if eq .Values.config.source "local" }}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: {{ .Values.configMapName | default (printf "%s-schema" (include "dynamic-form.fullname" .)) }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

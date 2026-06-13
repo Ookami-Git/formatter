@@ -1,0 +1,15 @@
+apiVersion: v2
+name: dynamic-form
+description: Générateur de formulaire dynamique depuis YAML / HCL / JSON — Kubernetes & Docker ready
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - form
+  - config
+  - terraform
+  - yaml
+  - kubernetes
+home: https://github.com/Ookami-Git/formatter
+sources:
+  - https://github.com/Ookami-Git/formatter

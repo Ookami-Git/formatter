@@ -1,0 +1,133 @@
+# -- Nombre de réplicas du pod
+replicaCount: 1
+
+image:
+  # -- Registre + nom de l'image
+  repository: ghcr.io/ookami-git/formatter
+  # -- Tag de l'image (défaut: chart appVersion)
+  tag: ""
+  # -- Politique de pull
+  pullPolicy: IfNotPresent
+
+# -- Secrets pour pull images privées (ghcr.io nécessite un token)
+imagePullSecrets: []
+#  - name: ghcr-pull-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+# ──────────────────────────────────────────────
+# Configuration de l'application
+# ──────────────────────────────────────────────
+config:
+  # -- Source de configuration : "local" ou "git"
+  source: local
+
+  # -- Chemin du fichier de configuration dans le container (mode local)
+  path: /app/config/schema.yaml
+
+  # -- Port d'écoute du serveur
+  port: 3000
+
+  # ── Mode Git ──────────────────────────────
+  git:
+    # -- URL du dépôt Git (sans token, le token est injecté via git.token ou git.existingSecret)
+    repoUrl: ""
+    # -- Branche à cloner
+    branch: main
+    # -- Chemin du fichier de config dans le dépôt
+    configPath: variables.tf
+    # -- Token d'authentification Git (sera stocké dans un Secret Kubernetes)
+    #    Laissez vide si vous utilisez existingSecret ou un repo public
+    token: ""
+    # -- Nom d'un Secret Kubernetes existant contenant la clé "GIT_TOKEN"
+    #    Si défini, il est utilisé à la place de git.token
+    existingSecret: ""
+
+# ── ConfigMap embarqué (mode local uniquement) ──
+# Si config.source=local, un ConfigMap sera créé avec ce contenu.
+# Vous pouvez aussi le remplacer par un ConfigMap existant (voir configMapName).
+configMapName: ""
+
+# -- Contenu du schéma injecté dans le ConfigMap (mode local)
+schemaContent: |
+  title: "Mon Application"
+  description: "Remplissez le formulaire pour générer votre configuration."
+  fields:
+    - name: app_name
+      label: "Nom de l'application"
+      type: string
+      default: "my-app"
+      required: true
+
+# ──────────────────────────────────────────────
+# Kubernetes Resources
+# ──────────────────────────────────────────────
+service:
+  # -- Type de service Kubernetes
+  type: ClusterIP
+  # -- Port exposé par le service
+  port: 80
+
+ingress:
+  # -- Activer l'Ingress
+  enabled: false
+  # -- Classe d'ingress (nginx, traefik, etc.)
+  className: ""
+  annotations: {}
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: formatter.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: formatter-tls
+  #    hosts:
+  #      - formatter.example.com
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 50m
+    memory: 128Mi
+
+# -- Annotations du pod
+podAnnotations: {}
+
+# -- Security context du pod
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+
+# -- Node selector
+nodeSelector: {}
+
+# -- Tolerations
+tolerations: []
+
+# -- Affinity rules
+affinity: {}
+
+# -- Liveness probe
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# -- Readiness probe
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 3
+  periodSeconds: 5

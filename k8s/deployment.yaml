@@ -1,0 +1,159 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dynamic-form-schema
+  labels:
+    app: dynamic-form
+data:
+  schema.yaml: |
+    title: "Kubernetes Resource Planner"
+    outputFormat: "hcl"
+    description: "Générez vos configurations Kubernetes / Terraform interactives en direct."
+    fields:
+      - name: deploymentName
+        label: "Nom du Déploiement"
+        type: "string"
+        default: "frontend-service"
+        required: true
+        description: "Nom de la ressource dans K8s."
+      
+      - name: namespace
+        label: "Namespace"
+        type: "string"
+        default: "default"
+        required: true
+        
+      - name: replicas
+        label: "Nombre de Réplicas"
+        type: "integer"
+        default: 3
+        required: true
+
+      - name: image
+        label: "Image Container"
+        type: "string"
+        default: "nginx:alpine"
+        required: true
+        description: "L'image Docker à exécuter."
+
+      - name: port
+        label: "Port du Container"
+        type: "integer"
+        default: 80
+        required: true
+
+      - name: enableAutoscaling
+        label: "Activer l'Autoscaling (HPA)"
+        type: "boolean"
+        default: false
+
+      - name: labels
+        label: "Labels de Service"
+        type: "array"
+        itemType: "object"
+        description: "Métadonnées appliquées aux pods."
+        fields:
+          - name: key
+            label: "Clé"
+            type: "string"
+            required: true
+          - name: value
+            label: "Valeur"
+            type: "string"
+            required: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamic-form
+  labels:
+    app: dynamic-form
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dynamic-form
+  template:
+    metadata:
+      labels:
+        app: dynamic-form
+    spec:
+      containers:
+        - name: web-app
+          image: ghcr.io/ookami-git/formatter:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: PORT
+              value: "3000"
+            # Configuration locale (défaut) ou distante (Git)
+            - name: CONFIG_SOURCE
+              value: "local" # Modifiez par "git" pour activer la récupération Git
+            - name: CONFIG_PATH
+              value: "/app/config/schema.yaml"
+            # Configurations optionnelles si CONFIG_SOURCE: "git"
+            # - name: GIT_REPO_URL
+            #   value: "https://github.com/votre-compte/votre-depot.git"
+            # - name: GIT_BRANCH
+            #   value: "main"
+            # - name: GIT_CONFIG_PATH
+            #   value: "variables.tf"
+            # - name: GIT_TOKEN
+            #   valueFrom:
+            #     secretKeyRef:
+            #       name: dynamic-form-git-token  # kubectl create secret generic dynamic-form-git-token --from-literal=GIT_TOKEN=ghp_xxx
+            #       key: GIT_TOKEN
+          # Kubernetes Health checks (Liveness/Readiness probes)
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          # Montage du volume (requis uniquement si CONFIG_SOURCE: "local")
+          volumeMounts:
+            - name: config-volume
+              mountPath: /app/config
+          resources:
+            limits:
+              cpu: 200m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 1000
+      volumes:
+        - name: config-volume
+          configMap:
+            name: dynamic-form-schema
+            items:
+              - key: schema.yaml
+                path: schema.yaml
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dynamic-form-service
+  labels:
+    app: dynamic-form
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 3000
+      protocol: TCP
+      name: http
+  selector:
+    app: dynamic-form

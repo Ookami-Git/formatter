@@ -1,0 +1,35 @@
+# formatter_name: Service Frontend
+title: "Paramètres Frontend"
+outputFormat: "yaml"
+fields:
+  - name: replicaCount
+    label: "Nombre d'instances"
+    type: "integer"
+    default: 2
+  - name: enableSSL
+    label: "Activer SSL"
+    type: "boolean"
+    default: false
+---
+# formatter_name: Service API Backend
+title: "Configuration Backend API"
+outputFormat: "json"
+fields:
+  - name: dbUrl
+    label: "URL Base de Données"
+    type: "string"
+    default: "postgres://db:5432/main"
+    required: true
+  - name: cacheExpirationSeconds
+    label: "Expiration Cache (s)"
+    type: "integer"
+    default: 3600
+---
+# Ce document n'a pas de nom spécifié, donc il prendra le nom par défaut incrémenté
+title: "Service Cache Redis"
+outputFormat: "yaml"
+fields:
+  - name: clusterMode
+    label: "Mode Cluster"
+    type: "boolean"
+    default: true
