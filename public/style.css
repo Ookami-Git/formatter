@@ -1,5 +1,6 @@
 /* Modern CSS Reset & Variable System */
 :root {
+  color-scheme: dark;
   --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: 'Fira Code', monospace;
   
@@ -349,7 +350,10 @@ select.form-control {
   padding-right: 40px;
 }
 
-select.form-control option {
+select.form-control option,
+select.form-control optgroup,
+.select-sm option,
+.select-sm optgroup {
   background-color: #0f172a; /* Fond sombre ardoise */
   color: var(--text-main);   /* Texte clair */
 }
