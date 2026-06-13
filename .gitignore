@@ -3,6 +3,7 @@ node_modules/
 
 # Local Git clone temp directory (used by the application)
 git-repo/
+git-repos/
 
 # Logs
 logs/
