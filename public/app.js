@@ -27,6 +27,10 @@ const elBtnApplyImport = document.getElementById('btn-apply-import');
 const elBtnCancelImport = document.getElementById('btn-cancel-import');
 let importModeActive = false;
 
+// Git branch selector elements
+const elBranchSelectorContainer = document.getElementById('branch-selector-container');
+const elSelectGitBranch = document.getElementById('select-git-branch');
+
 // Format Buttons
 const elFormatYaml = document.getElementById('format-yaml');
 const elFormatJson = document.getElementById('format-json');
@@ -40,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Set up event listeners
   elBtnRefresh.addEventListener('click', () => {
     if (confirm("Attention : Recharger le schéma va réinitialiser le formulaire et vous perdrez vos modifications actuelles. Voulez-vous continuer ?")) {
+      branchesLoaded = false; // Reset branches cache on manual refresh
       loadConfig(true);
     }
   });
@@ -50,6 +55,16 @@ document.addEventListener('DOMContentLoaded', () => {
   elBtnImport.addEventListener('click', toggleImportMode);
   elBtnCancelImport.addEventListener('click', toggleImportMode);
   elBtnApplyImport.addEventListener('click', applyImport);
+
+  // Git branch selector
+  elSelectGitBranch.addEventListener('change', () => {
+    const selectedBranch = elSelectGitBranch.value;
+    if (selectedBranch) {
+      localStorage.setItem('active_git_branch', selectedBranch);
+      loadConfig(true);
+    }
+  });
+
 
   formatButtons.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -62,10 +77,16 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadConfig(forceRefresh = false) {
   setLoadingState(true);
   try {
-    const url = forceRefresh ? '/api/config?refresh=true' : '/api/config';
+    const savedBranch = localStorage.getItem('active_git_branch');
+    let url = '/api/config?';
+    if (forceRefresh) url += 'refresh=true&';
+    if (savedBranch) url += `branch=${encodeURIComponent(savedBranch)}&`;
+
     const response = await fetch(url);
+
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errRes = await response.json().catch(() => ({}));
+      throw new Error(errRes.error || `HTTP error! status: ${response.status}`);
     }
 
     const result = await response.json();
@@ -78,6 +99,14 @@ async function loadConfig(forceRefresh = false) {
       source: result.source,
       sourceType: result.sourceType
     };
+
+    if (result.sourceType === 'git') {
+      elBranchSelectorContainer.style.display = 'flex';
+      // Load branches list from API and set select element active option
+      loadGitBranches(result.gitBranch || savedBranch);
+    } else {
+      elBranchSelectorContainer.style.display = 'none';
+    }
 
     if (isMultiDoc) {
       appSchema = result.data; // Array of { tabName, schema }
@@ -581,7 +610,7 @@ function extractFormData() {
 
   activeSchema.fields.forEach(field => {
     // Find the root form group for this field
-    const formGroup = elFormFieldsContainer.querySelector(`[data-field-name="${field.name}"]`);
+    const formGroup = elFormFieldsContainer.querySelector(`:scope > [data-field-name="${field.name}"]`);
     if (formGroup) {
       data[field.name] = extractFieldValue(formGroup, field);
     }
@@ -613,12 +642,12 @@ function extractFieldValue(formGroup, field) {
       return txtInput ? txtInput.value : '';
 
     case 'object':
-      const objectContainer = formGroup.querySelector('[data-object-container="true"]');
+      const objectContainer = formGroup.querySelector(':scope > [data-object-container="true"]');
       if (!objectContainer || !field.fields) return {};
 
       const objData = {};
       field.fields.forEach(subField => {
-        const subGroup = objectContainer.querySelector(`[data-field-name="${subField.name}"]`);
+        const subGroup = objectContainer.querySelector(`:scope > [data-field-name="${subField.name}"]`);
         if (subGroup) {
           const val = extractFieldValue(subGroup, subField);
           if (val !== undefined) {
@@ -629,10 +658,10 @@ function extractFieldValue(formGroup, field) {
       return objData;
 
     case 'array':
-      const itemsList = formGroup.querySelector('[data-array-items-list="true"]');
+      const itemsList = formGroup.querySelector(':scope > .array-container > [data-array-items-list="true"]');
       if (!itemsList) return [];
 
-      const itemCards = itemsList.querySelectorAll('.array-item-card');
+      const itemCards = itemsList.querySelectorAll(':scope > .array-item-card');
 
       // Check if this is a map representation (key/value pairs)
       const isMap = field.itemType === 'object' &&
@@ -643,8 +672,8 @@ function extractFieldValue(formGroup, field) {
       if (isMap) {
         const mapData = {};
         itemCards.forEach(itemCard => {
-          const keyGroup = itemCard.querySelector('[data-field-name="key"]');
-          const valueGroup = itemCard.querySelector('[data-field-name="value"]');
+          const keyGroup = itemCard.querySelector(':scope > .array-item-content > [data-field-name="key"]');
+          const valueGroup = itemCard.querySelector(':scope > .array-item-content > [data-field-name="value"]');
           if (keyGroup && valueGroup) {
             const k = extractFieldValue(keyGroup, { type: 'string' });
             const v = extractFieldValue(valueGroup, { type: field.fields[1].type || 'string' });
@@ -663,7 +692,7 @@ function extractFieldValue(formGroup, field) {
           const itemVal = {};
           if (field.fields) {
             field.fields.forEach(subField => {
-              const subGroup = itemCard.querySelector(`[data-field-name="${subField.name}"]`);
+              const subGroup = itemCard.querySelector(`:scope > .array-item-content > [data-field-name="${subField.name}"]`);
               if (subGroup) {
                 const val = extractFieldValue(subGroup, subField);
                 if (val !== undefined) {
@@ -675,7 +704,7 @@ function extractFieldValue(formGroup, field) {
           arrayData.push(itemVal);
         } else {
           // Primitive item in array (has a wrapper div with data-field-name="value")
-          const valueGroup = itemCard.querySelector('[data-field-name="value"]');
+          const valueGroup = itemCard.querySelector(':scope > .array-item-content > [data-field-name="value"]');
           if (valueGroup) {
             const primitiveField = { type: field.itemType || 'string' };
             const val = extractFieldValue(valueGroup, primitiveField);
@@ -975,7 +1004,7 @@ function populateFormFromData(data, fields) {
     const value = data[field.name];
     if (value === undefined) return;
 
-    const formGroup = elFormFieldsContainer.querySelector(`[data-field-name="${field.name}"]`);
+    const formGroup = elFormFieldsContainer.querySelector(`:scope > [data-field-name="${field.name}"]`);
     if (!formGroup) return;
 
     switch (field.type) {
@@ -1009,13 +1038,13 @@ function populateFormFromData(data, fields) {
         break;
 
       case 'object':
-        const objectContainer = formGroup.querySelector('[data-object-container="true"]');
+        const objectContainer = formGroup.querySelector(':scope > [data-object-container="true"]');
         if (objectContainer && field.fields && typeof value === 'object') {
           // Recurse into nested objects
           field.fields.forEach(subField => {
             const subValue = value[subField.name];
             if (subValue === undefined) return;
-            const subGroup = objectContainer.querySelector(`[data-field-name="${subField.name}"]`);
+            const subGroup = objectContainer.querySelector(`:scope > [data-field-name="${subField.name}"]`);
             if (!subGroup) return;
             populateFieldElement(subGroup, subField, subValue);
           });
@@ -1157,3 +1186,73 @@ function parseTfvars(text) {
 
   return result;
 }
+
+// ===== GIT BRANCH SELECTOR FUNCTIONALITY =====
+
+let branchesLoaded = false;
+
+async function loadGitBranches(activeBranch) {
+  if (branchesLoaded) {
+    if (activeBranch) elSelectGitBranch.value = activeBranch;
+    return;
+  }
+  
+  try {
+    const response = await fetch('/api/branches');
+    if (!response.ok) {
+      throw new Error('Impossible de charger les branches/tags');
+    }
+    const result = await response.json();
+    if (result.success && (Array.isArray(result.branches) || Array.isArray(result.tags))) {
+      elSelectGitBranch.innerHTML = '';
+      
+      let branchToSelect = activeBranch;
+      
+      // Render Branches Group
+      if (Array.isArray(result.branches) && result.branches.length > 0) {
+        const branchesGroup = document.createElement('optgroup');
+        branchesGroup.label = 'Branches';
+        
+        result.branches.forEach(branch => {
+          const opt = document.createElement('option');
+          opt.value = branch;
+          opt.textContent = branch;
+          branchesGroup.appendChild(opt);
+        });
+        elSelectGitBranch.appendChild(branchesGroup);
+      }
+      
+      // Render Tags Group
+      if (Array.isArray(result.tags) && result.tags.length > 0) {
+        const tagsGroup = document.createElement('optgroup');
+        tagsGroup.label = 'Tags / Versions';
+        
+        result.tags.forEach(tag => {
+          const opt = document.createElement('option');
+          opt.value = tag;
+          opt.textContent = tag;
+          tagsGroup.appendChild(opt);
+        });
+        elSelectGitBranch.appendChild(tagsGroup);
+      }
+
+      // Fallback selection
+      if (!branchToSelect) {
+        if (result.branches && result.branches.length > 0) {
+          branchToSelect = result.branches[0];
+        } else if (result.tags && result.tags.length > 0) {
+          branchToSelect = result.tags[0];
+        }
+      }
+
+      if (branchToSelect) {
+        elSelectGitBranch.value = branchToSelect;
+        localStorage.setItem('active_git_branch', branchToSelect);
+      }
+      branchesLoaded = true;
+    }
+  } catch (error) {
+    console.error('Error fetching branches/tags:', error);
+  }
+}
+

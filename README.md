@@ -27,7 +27,7 @@ Générateur de formulaire dynamique qui produit du **JSON**, **YAML** ou **HCL/
 ### Docker
 
 ```bash
-# Image depuis GitHub Container Registry
+# Image depuis GitHub Container Registry (schéma exemple intégré)
 docker run -d -p 3000:3000 ghcr.io/ookami-git/formatter:latest
 ```
 
@@ -51,6 +51,15 @@ docker run -d -p 3000:3000 \
   ghcr.io/ookami-git/formatter:latest
 ```
 
+Avec une source URL :
+
+```bash
+docker run -d -p 3000:3000 \
+  -e CONFIG_SOURCE=url \
+  -e URL_ADDRESS=https://raw.githubusercontent.com/mon-org/mon-repo/main/schema.yaml \
+  ghcr.io/ookami-git/formatter:latest
+```
+
 ### Node.js (développement)
 
 ```bash
@@ -66,12 +75,14 @@ npm start
 | Variable | Description | Valeur par défaut | Requis |
 |---|---|---|---|
 | `PORT` | Port d'écoute du serveur HTTP | `3000` | Non |
-| `CONFIG_SOURCE` | Source de la configuration : `local` ou `git` | `local` | Non |
+| `CONFIG_SOURCE` | Source de la configuration : `local`, `git` ou `url` | `local` | Non |
 | `CONFIG_PATH` | Chemin du fichier de configuration (mode `local`) | `/app/examples/schema.yaml` | Non |
 | `GIT_REPO_URL` | URL du dépôt Git à cloner (sans token) | — | Oui si `git` |
 | `GIT_TOKEN` | Token d'authentification Git (PAT GitHub/GitLab). Injecté automatiquement dans l'URL | — | Non (repos privés) |
 | `GIT_BRANCH` | Branche Git à utiliser | `main` | Non |
 | `GIT_CONFIG_PATH` | Chemin du fichier de config dans le dépôt Git | `variables.tf` | Non |
+| `URL_ADDRESS` | URL HTTP/HTTPS du fichier de schéma (mode `url`) | — | Oui si `url` |
+| `URL_IGNORE_SSL` | Ignorer la vérification SSL (`true`/`false`) | `false` | Non |
 
 ### 🔐 Authentification Git (repos privés)
 
@@ -98,7 +109,7 @@ config:
     repoUrl: "https://github.com/org/repo.git"
     token: "ghp_xxxxxxxxxxxx"          # → crée un Secret automatiquement
     # OU
-    existingSecret: "my-git-secret"    # → utilise un Secret existant (clé: GIT_TOKEN)
+    existingTokenSecret: "my-git-secret"  # → utilise un Secret existant (clé: GIT_TOKEN)
 ```
 
 > **Note :** L'injection est automatique — GitHub reçoit `https://TOKEN@github.com/...`, GitLab reçoit `https://oauth2:TOKEN@gitlab.com/...`. Le token est masqué dans les logs serveur.
@@ -193,17 +204,51 @@ variable "tags" {
 
 ### Option 1 : Helm Chart (recommandé)
 
+La source de configuration se choisit via `config.source`. Chaque mode dispose de son propre bloc de configuration.
+
+#### Modes disponibles
+
+| Mode | Description | Configuration requise |
+|---|---|---|
+| `embedded` | Schéma exemple intégré dans l'image Docker | Aucune |
+| `inline` | Schéma défini dans `values.yaml` | `config.inline.schema` |
+| `configmap` | ConfigMap Kubernetes existant | `config.configmap.name` |
+| `secret` | Secret Kubernetes existant | `config.secret.name` |
+| `url` | URL HTTP/HTTPS d'un fichier de schéma | `config.url.address` |
+| `git` | Dépôt Git (clone + rafraîchissement) | `config.git.*` |
+
+#### Exemples
+
 ```bash
-# Installation avec les valeurs par défaut (mode local + ConfigMap embarqué)
+# Mode embedded — schéma d'exemple, aucune configuration
+helm install my-form ./helm --set config.source=embedded
+
+# Mode inline — schéma défini dans values.yaml (défaut)
 helm install my-form ./helm
 
-# Installation avec source Git
+# Mode configmap — ConfigMap existant
+helm install my-form ./helm \
+  --set config.source=configmap \
+  --set config.configmap.name=mon-configmap
+
+# Mode secret — Secret existant
+helm install my-form ./helm \
+  --set config.source=secret \
+  --set config.secret.name=mon-secret
+
+# Mode url — schéma chargé depuis une URL
+helm install my-form ./helm \
+  --set config.source=url \
+  --set config.url.address="https://raw.githubusercontent.com/org/repo/main/schema.yaml"
+
+# Mode git — dépôt privé avec token
 helm install my-form ./helm \
   --set config.source=git \
-  --set config.git.repoUrl="https://TOKEN@github.com/org/repo.git" \
+  --set config.git.repoUrl="https://github.com/org/repo.git" \
+  --set config.git.token="ghp_xxxx" \
   --set config.git.configPath="infra/variables.tf"
 
-# Installation avec Ingress
+# Avec Ingress
 helm install my-form ./helm \
   --set ingress.enabled=true \
   --set ingress.className=nginx \
@@ -219,16 +264,18 @@ helm install my-form ./helm \
 | `replicaCount` | Nombre de réplicas | `1` |
 | `image.repository` | Image Docker | `ghcr.io/ookami-git/formatter` |
 | `image.tag` | Tag de l'image | `appVersion` du chart |
-| `config.source` | Source : `local` ou `git` | `local` |
-| `config.path` | Chemin de config (mode local/image) | `/app/config/schema.yaml` (si mountConfigMap: true)<br>`/app/examples/schema.yaml` (si false) |
+| `config.source` | Source : `embedded` \| `inline` \| `configmap` \| `secret` \| `url` \| `git` | `inline` |
 | `config.port` | Port du serveur | `3000` |
-| `config.mountConfigMap` | Activer le montage d'un ConfigMap ou Secret (mode local) | `true` |
-| `config.git.repoUrl` | URL du repo Git | `""` |
+| `config.inline.schema` | Contenu YAML du schéma (mode `inline`) | Schéma exemple |
+| `config.configmap.name` | Nom du ConfigMap existant (mode `configmap`) | `""` |
+| `config.secret.name` | Nom du Secret existant (mode `secret`) | `""` |
+| `config.url.address` | URL du schéma (mode `url`) | `""` |
+| `config.url.ignoreSsl` | Ignorer la vérification SSL (mode `url`) | `false` |
+| `config.git.repoUrl` | URL du repo Git (mode `git`) | `""` |
 | `config.git.branch` | Branche Git | `main` |
 | `config.git.configPath` | Fichier de config dans le repo | `variables.tf` |
-| `configMapName` | Nom d'un ConfigMap existant (optionnel) | `""` |
-| `secretName` | Nom d'un Secret existant (optionnel, priorité sur configMapName) | `""` |
-| `schemaContent` | Contenu YAML du schéma (si pas de ConfigMap externe) | Schéma exemple |
+| `config.git.token` | Token Git → Secret créé automatiquement | `""` |
+| `config.git.existingTokenSecret` | Secret existant contenant `GIT_TOKEN` | `""` |
 | `service.type` | Type de service K8s | `ClusterIP` |
 | `service.port` | Port du service | `80` |
 | `ingress.enabled` | Activer l'Ingress | `false` |

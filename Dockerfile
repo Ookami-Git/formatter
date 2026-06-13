@@ -28,7 +28,7 @@ COPY examples ./examples
 RUN chmod -R 755 /app
 
 # Create a writable directory for Git clone (owned by node user)
-RUN mkdir -p /app/git-repo && chown node:node /app/git-repo
+RUN mkdir -p /app/git-repos && chown node:node /app/git-repos
 
 # Run as non-root user for security in Kubernetes
 USER node

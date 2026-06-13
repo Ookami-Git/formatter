@@ -20,54 +20,77 @@ fullnameOverride: ""
 # Configuration de l'application
 # ──────────────────────────────────────────────
 config:
-  # -- Source de configuration : "local" ou "git"
-  source: local
-
-  # -- Chemin du fichier de configuration dans le container
-  #    - Si mountConfigMap est true, ce chemin doit être sous /app/config/ (ex: /app/config/schema.yaml)
-  #    - Si mountConfigMap est false, ce chemin doit pointer vers le fichier intégré (ex: /app/examples/schema.yaml)
-  path: /app/config/schema.yaml
+  # ────────────────────────────────────────────────────────────────────────────
+  # Source de configuration — choisissez UNE seule valeur parmi :
+  #
+  #   embedded  → Utilise le schéma exemple intégré dans l'image Docker.
+  #               (/app/examples/schema.yaml). Aucune configuration requise.
+  #
+  #   inline    → Définit le schéma directement dans ce fichier via config.inline.schema.
+  #               Un ConfigMap est créé automatiquement par le chart Helm.
+  #
+  #   configmap → Monte un ConfigMap Kubernetes existant.
+  #               Renseigner config.configmap.name.
+  #
+  #   secret    → Monte un Secret Kubernetes existant.
+  #               Renseigner config.secret.name.
+  #
+  #   url       → Charge le schéma depuis une URL HTTP/HTTPS à chaque requête.
+  #               Renseigner config.url.address.
+  #
+  #   git       → Clone un dépôt Git au démarrage et à chaque rafraîchissement.
+  #               Renseigner config.git.* ci-dessous.
+  # ────────────────────────────────────────────────────────────────────────────
+  source: inline
 
   # -- Port d'écoute du serveur
   port: 3000
 
-  # -- Activer le montage d'un ConfigMap ou d'un Secret (mode local uniquement)
-  #    Si true, un volume sera monté dans le container. Si false, l'application
-  #    utilisera le schéma intégré dans l'image (ex: /app/examples/schema.yaml).
-  mountConfigMap: true
+  # ── Mode : inline ────────────────────────────────────────────────────────────
+  # Contenu du schéma YAML injecté dans un ConfigMap créé par le chart.
+  # (utilisé uniquement si source: inline)
+  inline:
+    schema: |
+      title: "Mon Application"
+      description: "Remplissez le formulaire pour générer votre configuration."
+      fields:
+        - name: app_name
+          label: "Nom de l'application"
+          type: string
+          default: "my-app"
+          required: true
 
-  # ── Mode Git ──────────────────────────────
+  # ── Mode : configmap ──────────────────────────────────────────────────────────
+  # (utilisé uniquement si source: configmap)
+  configmap:
+    name: ""    # -- Nom du ConfigMap Kubernetes existant contenant schema.yaml
+
+  # ── Mode : secret ─────────────────────────────────────────────────────────────
+  # (utilisé uniquement si source: secret)
+  secret:
+    name: ""    # -- Nom du Secret Kubernetes existant contenant schema.yaml
+
+  # ── Mode : url ────────────────────────────────────────────────────────────────
+  # (utilisé uniquement si source: url)
+  url:
+    address: ""         # -- URL HTTP/HTTPS du fichier de schéma (yaml, json, tf)
+    ignoreSsl: false    # -- Ignorer la vérification du certificat SSL
+
+  # ── Mode : git ────────────────────────────────────────────────────────────────
+  # (utilisé uniquement si source: git)
   git:
-    # -- URL du dépôt Git (sans token, le token est injecté via git.token ou git.existingSecret)
+    # -- URL du dépôt Git (sans token — le token est injecté séparément)
     repoUrl: ""
     # -- Branche à cloner
     branch: main
-    # -- Chemin du fichier de config dans le dépôt
+    # -- Chemin du fichier de configuration dans le dépôt
     configPath: variables.tf
     # -- Token d'authentification Git (sera stocké dans un Secret Kubernetes)
-    #    Laissez vide si vous utilisez existingSecret ou un repo public
+    #    Laisser vide si vous utilisez existingTokenSecret ou un repo public
     token: ""
     # -- Nom d'un Secret Kubernetes existant contenant la clé "GIT_TOKEN"
     #    Si défini, il est utilisé à la place de git.token
-    existingSecret: ""
-
-# ── ConfigMap / Secret externe ou embarqué (mode local uniquement) ──
-# Si config.source=local et config.mountConfigMap=true, un ConfigMap/Secret sera monté.
-# Vous pouvez spécifier un ConfigMap existant :
-configMapName: ""
-# Ou un Secret existant (prend la priorité sur configMapName si défini) :
-secretName: ""
-
-# -- Contenu du schéma injecté dans le ConfigMap (mode local)
-schemaContent: |
-  title: "Mon Application"
-  description: "Remplissez le formulaire pour générer votre configuration."
-  fields:
-    - name: app_name
-      label: "Nom de l'application"
-      type: string
-      default: "my-app"
-      required: true
+    existingTokenSecret: ""
 
 # ──────────────────────────────────────────────
 # Kubernetes Resources

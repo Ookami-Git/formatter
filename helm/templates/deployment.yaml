@@ -35,10 +35,41 @@ spec:
           env:
             - name: PORT
               value: {{ .Values.config.port | quote }}
+
+            {{- /* ── CONFIG_SOURCE envoyé au serveur Node.js ──────────────────────────
+                 embedded / inline / configmap / secret → le serveur les traite tous
+                 comme "local" (lecture d'un fichier). url et git sont natifs.
+            */}}
+            {{- if or (eq .Values.config.source "embedded") (eq .Values.config.source "inline") (eq .Values.config.source "configmap") (eq .Values.config.source "secret") }}
+            - name: CONFIG_SOURCE
+              value: "local"
+            {{- else }}
             - name: CONFIG_SOURCE
               value: {{ .Values.config.source | quote }}
+            {{- end }}
+
+            {{- /* ── CONFIG_PATH inféré automatiquement selon la source ─────────────
+                 embedded  → schéma intégré dans l'image
+                 inline / configmap / secret → volume monté dans /app/config
+                 url / git → non utilisé (chemin géré côté serveur)
+            */}}
+            {{- if eq .Values.config.source "embedded" }}
             - name: CONFIG_PATH
-              value: {{ .Values.config.path | quote }}
+              value: "/app/examples/schema.yaml"
+            {{- else if or (eq .Values.config.source "inline") (eq .Values.config.source "configmap") (eq .Values.config.source "secret") }}
+            - name: CONFIG_PATH
+              value: "/app/config/schema.yaml"
+            {{- end }}
+
+            {{- /* ── Mode url ─────────────────────────────────────────────────────── */}}
+            {{- if eq .Values.config.source "url" }}
+            - name: URL_ADDRESS
+              value: {{ .Values.config.url.address | quote }}
+            - name: URL_IGNORE_SSL
+              value: {{ .Values.config.url.ignoreSsl | quote }}
+            {{- end }}
+
+            {{- /* ── Mode git ─────────────────────────────────────────────────────── */}}
             {{- if eq .Values.config.source "git" }}
             - name: GIT_REPO_URL
               value: {{ .Values.config.git.repoUrl | quote }}
@@ -46,14 +77,15 @@ spec:
               value: {{ .Values.config.git.branch | quote }}
             - name: GIT_CONFIG_PATH
               value: {{ .Values.config.git.configPath | quote }}
-            {{- if or .Values.config.git.token .Values.config.git.existingSecret }}
+            {{- if or .Values.config.git.token .Values.config.git.existingTokenSecret }}
             - name: GIT_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.config.git.existingSecret | default (printf "%s-git-token" (include "dynamic-form.fullname" .)) }}
+                  name: {{ .Values.config.git.existingTokenSecret | default (printf "%s-git-token" (include "dynamic-form.fullname" .)) }}
                   key: GIT_TOKEN
             {{- end }}
             {{- end }}
+
           {{- with .Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
@@ -66,22 +98,31 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- if and (eq .Values.config.source "local") .Values.config.mountConfigMap }}
+
+          {{- /* ── Volume monté uniquement si la source nécessite un fichier externe ── */}}
+          {{- if or (eq .Values.config.source "inline") (eq .Values.config.source "configmap") (eq .Values.config.source "secret") }}
           volumeMounts:
             - name: config-volume
               mountPath: /app/config
           {{- end }}
-      {{- if and (eq .Values.config.source "local") .Values.config.mountConfigMap }}
+
+      {{- /* ── Définition des volumes selon la source ─────────────────────────────── */}}
+      {{- if or (eq .Values.config.source "inline") (eq .Values.config.source "configmap") (eq .Values.config.source "secret") }}
       volumes:
         - name: config-volume
-          {{- if .Values.secretName }}
+          {{- if eq .Values.config.source "secret" }}
           secret:
-            secretName: {{ .Values.secretName }}
-          {{- else }}
+            secretName: {{ .Values.config.secret.name }}
+          {{- else if eq .Values.config.source "configmap" }}
           configMap:
-            name: {{ .Values.configMapName | default (printf "%s-schema" (include "dynamic-form.fullname" .)) }}
+            name: {{ .Values.config.configmap.name }}
+          {{- else }}
+          {{- /* source: inline → ConfigMap créé par helm/templates/configmap.yaml */}}
+          configMap:
+            name: {{ include "dynamic-form.fullname" . }}-schema
           {{- end }}
       {{- end }}
+
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

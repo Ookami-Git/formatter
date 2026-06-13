@@ -822,3 +822,38 @@ code[class*="language-"] {
   opacity: 0.5;
 }
 
+/* Branch Selector Container */
+.branch-selector-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.branch-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.select-sm {
+  background-color: transparent !important;
+  border: none !important;
+  color: #a5b4fc !important;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  font-size: 0.8rem !important;
+  padding: 0 20px 0 0 !important;
+  height: auto !important;
+  background-position: right 4px center !important;
+}
+
+.select-sm:focus {
+  box-shadow: none !important;
+}
+
