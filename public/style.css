@@ -789,3 +789,36 @@ code[class*="language-"] {
   margin-top: 10px;
   gap: 8px;
 }
+
+/* Source tag styling */
+.source-tag {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: #a5b4fc;
+  cursor: help;
+}
+
+.source-tag.source-local {
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+.source-tag.source-git {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+.header-separator {
+  margin: 0 6px;
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+

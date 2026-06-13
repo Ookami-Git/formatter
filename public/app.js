@@ -4,6 +4,7 @@ let currentFormat = 'json';
 let isMultiDoc = false;
 let activeTabIndex = 0;
 let tabDataCache = []; // Cache for form state per tab
+let currentConfigMeta = null;
 
 // DOM Elements
 const elAppTitle = document.getElementById('app-title');
@@ -37,7 +38,11 @@ document.addEventListener('DOMContentLoaded', () => {
   loadConfig(false);
 
   // Set up event listeners
-  elBtnRefresh.addEventListener('click', () => loadConfig(true));
+  elBtnRefresh.addEventListener('click', () => {
+    if (confirm("Attention : Recharger le schéma va réinitialiser le formulaire et vous perdrez vos modifications actuelles. Voulez-vous continuer ?")) {
+      loadConfig(true);
+    }
+  });
   elBtnCopy.addEventListener('click', copyToClipboard);
   elChkKeepEmpty.addEventListener('change', updateLiveOutput);
 
@@ -69,6 +74,10 @@ async function loadConfig(forceRefresh = false) {
     }
 
     isMultiDoc = !!result.isMultiDoc;
+    currentConfigMeta = {
+      source: result.source,
+      sourceType: result.sourceType
+    };
 
     if (isMultiDoc) {
       appSchema = result.data; // Array of { tabName, schema }
@@ -76,8 +85,6 @@ async function loadConfig(forceRefresh = false) {
       tabDataCache = appSchema.map(tabItem => getDefaultValues(tabItem.schema.fields));
 
       const activeSchema = appSchema[activeTabIndex].schema;
-      elAppTitle.textContent = activeSchema.title || 'Formulaire Dynamique';
-      elAppDescription.textContent = activeSchema.description || `Configuration multi-documents`;
 
       elTabBarContainer.style.display = 'flex';
       renderTabs();
@@ -88,14 +95,13 @@ async function loadConfig(forceRefresh = false) {
       isMultiDoc = false;
       tabDataCache = [];
 
-      elAppTitle.textContent = appSchema.title || 'Formulaire Dynamique';
-      elAppDescription.textContent = appSchema.description || `Configuré depuis ${pathBasename(result.source)}`;
-
       elTabBarContainer.style.display = 'none';
       elTabBarContainer.innerHTML = '';
 
       renderForm(appSchema.fields);
     }
+
+    updateAppHeader();
 
     elConfigPath.textContent = result.source;
     updateFormatButtons();
@@ -151,8 +157,7 @@ function switchTab(newIndex) {
   renderTabs();
 
   const activeSchema = appSchema[activeTabIndex].schema;
-  elAppTitle.textContent = activeSchema.title || 'Formulaire Dynamique';
-  elAppDescription.textContent = activeSchema.description || `Configuration multi-documents`;
+  updateAppHeader();
 
   // Re-render form with cached data
   renderForm(activeSchema.fields, tabDataCache[activeTabIndex]);
@@ -162,6 +167,32 @@ function switchTab(newIndex) {
 
 function pathBasename(pathStr) {
   return pathStr.split(/[\\/]/).pop();
+}
+
+function updateAppHeader() {
+  if (!appSchema) return;
+  
+  elAppTitle.textContent = "Formulaire de Configuration";
+  
+  const sourceName = currentConfigMeta ? pathBasename(currentConfigMeta.source) : '';
+  const sourceTypeLabel = currentConfigMeta && currentConfigMeta.sourceType === 'git' ? 'Git' : 'Local';
+  const sourceTypeClass = currentConfigMeta ? currentConfigMeta.sourceType : 'local';
+  
+  let schemaTitle = '';
+  
+  if (isMultiDoc) {
+    const activeSchema = appSchema[activeTabIndex].schema;
+    schemaTitle = activeSchema.title || 'Multi-documents';
+  } else {
+    schemaTitle = appSchema.title || 'Configuration';
+  }
+  
+  let subtitleHtml = `Schéma : <strong>${schemaTitle}</strong>`;
+  if (currentConfigMeta) {
+    subtitleHtml += ` <span class="header-separator">•</span> Source : <span class="source-tag source-${sourceTypeClass}" title="${currentConfigMeta.source}">${sourceName} (${sourceTypeLabel})</span>`;
+  }
+  
+  elAppDescription.innerHTML = subtitleHtml;
 }
 
 function setLoadingState(isLoading) {
