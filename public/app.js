@@ -801,21 +801,45 @@ function copyToClipboard() {
   const codeText = elCodeOutput.textContent;
   if (!codeText) return;
 
-  navigator.clipboard.writeText(codeText).then(() => {
-    // Show success state
-    const originalText = elCopyText.textContent;
-    elCopyText.textContent = 'Copié !';
-    elBtnCopy.classList.add('btn-success');
+  const onSuccess = () => {
+    const iconEl = elBtnCopy.querySelector('.icon-copy');
+    if (iconEl) {
+      iconEl.innerHTML = '<polyline points="20 6 9 17 4 12"/>';
+    }
+    elBtnCopy.classList.add('btn-copied');
 
-    // Reset after 2 seconds
     setTimeout(() => {
-      elCopyText.textContent = originalText;
-      elBtnCopy.classList.remove('btn-success');
+      if (iconEl) {
+        iconEl.innerHTML = '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>';
+      }
+      elBtnCopy.classList.remove('btn-copied');
     }, 2000);
-  }).catch(err => {
+  };
+
+  const onError = (err) => {
     console.error('Could not copy text: ', err);
     alert('Erreur lors de la copie dans le presse-papier.');
-  });
+  };
+
+  // navigator.clipboard requires a secure context (HTTPS or localhost)
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(codeText).then(onSuccess).catch(onError);
+  } else {
+    // Fallback for HTTP contexts (e.g. container accessed via IP)
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = codeText;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      onSuccess();
+    } catch (err) {
+      onError(err);
+    }
+  }
 }
 
 // Helper to pre-populate default schema values

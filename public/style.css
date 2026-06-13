@@ -198,6 +198,11 @@ body {
   border-radius: 6px;
 }
 
+.btn-copied {
+  background-color: var(--color-success) !important;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
 .icon {
   width: 16px;
   height: 16px;
