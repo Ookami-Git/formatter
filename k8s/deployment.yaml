@@ -118,8 +118,10 @@ spec:
               port: 3000
             initialDelaySeconds: 3
             periodSeconds: 5
-          # Montage du volume (requis uniquement si CONFIG_SOURCE: "local")
+          # Montage du volume
           volumeMounts:
+            - name: git-repos-volume
+              mountPath: /app/git-repos
             - name: config-volume
               mountPath: /app/config
           resources:
@@ -135,6 +137,8 @@ spec:
             runAsNonRoot: true
             runAsUser: 1000
       volumes:
+        - name: git-repos-volume
+          emptyDir: {}
         - name: config-volume
           configMap:
             name: dynamic-form-schema

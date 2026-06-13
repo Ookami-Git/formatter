@@ -99,16 +99,19 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
 
-          {{- /* ── Volume monté uniquement si la source nécessite un fichier externe ── */}}
-          {{- if or (eq .Values.config.source "inline") (eq .Values.config.source "configmap") (eq .Values.config.source "secret") }}
           volumeMounts:
+            - name: git-repos-volume
+              mountPath: /app/git-repos
+            {{- if or (eq .Values.config.source "inline") (eq .Values.config.source "configmap") (eq .Values.config.source "secret") }}
             - name: config-volume
               mountPath: /app/config
-          {{- end }}
+            {{- end }}
 
-      {{- /* ── Définition des volumes selon la source ─────────────────────────────── */}}
-      {{- if or (eq .Values.config.source "inline") (eq .Values.config.source "configmap") (eq .Values.config.source "secret") }}
+      {{- /* ── Définition des volumes ───────────────────────────────────────────── */}}
       volumes:
+        - name: git-repos-volume
+          emptyDir: {}
+        {{- if or (eq .Values.config.source "inline") (eq .Values.config.source "configmap") (eq .Values.config.source "secret") }}
         - name: config-volume
           {{- if eq .Values.config.source "secret" }}
           secret:
@@ -121,7 +124,7 @@ spec:
           configMap:
             name: {{ include "dynamic-form.fullname" . }}-schema
           {{- end }}
-      {{- end }}
+        {{- end }}
 
       {{- with .Values.nodeSelector }}
       nodeSelector:

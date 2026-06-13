@@ -5,6 +5,7 @@ npm-debug.log*
 .gitignore
 .dockerignore
 git-repo
+git-repos
 k8s
 helm
 *.md

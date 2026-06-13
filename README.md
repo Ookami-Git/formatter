@@ -83,6 +83,8 @@ npm start
 | `GIT_CONFIG_PATH` | Chemin du fichier de config dans le dépôt Git | `variables.tf` | Non |
 | `URL_ADDRESS` | URL HTTP/HTTPS du fichier de schéma (mode `url`) | — | Oui si `url` |
 | `URL_IGNORE_SSL` | Ignorer la vérification SSL (`true`/`false`) | `false` | Non |
+| `HTTP_PROXY` | URL du proxy HTTP à utiliser pour le clonage Git et les requêtes sortantes | — | Non |
+| `HTTPS_PROXY` | URL du proxy HTTPS à utiliser pour le clonage Git et les requêtes sortantes | — | Non |
 
 ### 🔐 Authentification Git (repos privés)
 
