@@ -861,3 +861,62 @@ code[class*="language-"] {
   box-shadow: none !important;
 }
 
+/* ── Regex Validation Styles ──────────────────────────────────────────────── */
+
+/* Invalid input state: red border + subtle glow */
+.form-control.input-invalid {
+  border-color: var(--color-danger) !important;
+  background-color: rgba(239, 68, 68, 0.04) !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12) !important;
+}
+
+.form-control.input-invalid:focus {
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2) !important;
+}
+
+/* Error message below the field */
+.field-validation-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--color-danger-hover);
+  margin-top: 2px;
+  animation: validationErrorIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.field-validation-error::before {
+  content: "⚠";
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  margin-top: 1px;
+  opacity: 0.85;
+}
+
+@keyframes validationErrorIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Regex hint badge shown on label row */
+.regex-hint-badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.12);
+  color: #a5b4fc;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  cursor: help;
+  margin-left: 4px;
+  vertical-align: middle;
+}

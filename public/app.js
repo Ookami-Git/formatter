@@ -306,6 +306,15 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
   }
   labelEl.textContent = field.label || field.name;
 
+  // Add regex badge hint if field has regex validation
+  if (field.validation && field.validation.regex) {
+    const regexBadge = document.createElement('span');
+    regexBadge.className = 'regex-hint-badge';
+    regexBadge.textContent = 'regex';
+    regexBadge.title = `Pattern: ${field.validation.regex}`;
+    labelEl.appendChild(regexBadge);
+  }
+
   labelContainer.appendChild(labelEl);
   formGroup.appendChild(labelContainer);
 
@@ -594,7 +603,49 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
 
       const finalTxtVal = cachedVal !== undefined ? cachedVal : (field.default !== undefined ? field.default : '');
       txtInput.value = finalTxtVal;
-      formGroup.appendChild(txtInput);
+
+      // Apply regex validation if defined
+      if (field.validation && field.validation.regex) {
+        txtInput.dataset.regexPattern = field.validation.regex;
+        const validationMsg = field.validation.message || `Format invalide (regex: ${field.validation.regex})`;
+        txtInput.dataset.regexMessage = validationMsg;
+
+        const errEl = document.createElement('span');
+        errEl.className = 'field-validation-error';
+        errEl.setAttribute('aria-live', 'polite');
+        errEl.style.display = 'none';
+        errEl.textContent = validationMsg;
+
+        const validateInput = () => {
+          if (txtInput.value === '') {
+            txtInput.classList.remove('input-invalid');
+            errEl.style.display = 'none';
+            return;
+          }
+          try {
+            const rx = new RegExp(field.validation.regex);
+            if (rx.test(txtInput.value)) {
+              txtInput.classList.remove('input-invalid');
+              errEl.style.display = 'none';
+            } else {
+              txtInput.classList.add('input-invalid');
+              errEl.style.display = 'block';
+            }
+          } catch (e) {
+            // invalid regex pattern — ignore silently
+          }
+        };
+
+        txtInput.addEventListener('input', validateInput);
+        txtInput.addEventListener('change', validateInput);
+        // Run immediately for pre-filled values
+        validateInput();
+
+        formGroup.appendChild(txtInput);
+        formGroup.appendChild(errEl);
+      } else {
+        formGroup.appendChild(txtInput);
+      }
       break;
   }
 
