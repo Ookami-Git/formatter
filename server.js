@@ -55,7 +55,7 @@ function syncGitRepo() {
   if (CONFIG_SOURCE !== 'git' || !GIT_REPO_URL) return;
 
   try {
-    if (!fs.existsSync(GIT_TEMP_DIR)) {
+    if (!fs.existsSync(path.join(GIT_TEMP_DIR, '.git'))) {
       console.log(`[Git] Cloning repository ${sanitizeUrl(GIT_REPO_URL)} (branch: ${GIT_BRANCH}) into ${GIT_TEMP_DIR}...`);
       // Clone single branch and depth 1 for maximum speed
       execSync(`git clone --single-branch --branch ${GIT_BRANCH} --depth 1 "${GIT_REPO_URL}" "${GIT_TEMP_DIR}"`, { stdio: 'inherit' });
@@ -116,11 +116,11 @@ app.get('/api/config', (req, res) => {
 
     const fileContent = fs.readFileSync(resolvedPath, 'utf8');
     const ext = path.extname(resolvedPath).toLowerCase();
-    
+
     let configData;
     let formatDetected = 'yaml';
     let isMultiDoc = false;
-    
+
     if (ext === '.tf') {
       configData = parser.parseTerraformVariables(fileContent);
       formatDetected = 'hcl';
@@ -128,11 +128,11 @@ app.get('/api/config', (req, res) => {
       formatDetected = 'yaml';
       const docsText = fileContent.split(/^---$/m);
       const parsedDocs = [];
-      
+
       docsText.forEach((docText, index) => {
         const trimmed = docText.trim();
         if (!trimmed) return;
-        
+
         try {
           const docData = yaml.load(trimmed);
           if (docData && typeof docData === 'object' && Object.keys(docData).length > 0) {
@@ -159,7 +159,7 @@ app.get('/api/config', (req, res) => {
           console.warn(`[YAML] Failed to parse document index ${index}:`, e.message);
         }
       });
-      
+
       if (parsedDocs.length > 1) {
         configData = parsedDocs;
         isMultiDoc = true;
