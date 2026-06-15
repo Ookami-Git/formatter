@@ -179,6 +179,22 @@ hosts:
     role: worker
 ```
 
+### Référencement de variables dans un schéma YAML/JSON
+
+```yaml
+fields:
+  - name: subnets
+    label: "Subnets"
+    type: array
+    itemType: string
+    default: [a, b, c]
+
+  - name: subnet_name
+    label: "Subnet sélectionné"
+    type: select
+    optionsFrom: /subnets
+```
+
 ### Multi-documents YAML (onglets)
 
 ```yaml
@@ -216,6 +232,30 @@ variable "tags" {
   description = "Labels"
   type        = map(string)
   default     = {}
+}
+```
+
+#### Annotations Terraform supportées
+
+- `@ignore` dans la description d'une variable Terraform exclut totalement la variable du formulaire généré.
+- `@optionsFrom(<target> = <source>)` permet de lier un champ de type `select` à des valeurs provenant d'une autre propriété du schéma.
+  - `<source>` peut être un chemin absolu commençant par `/` ou un chemin relatif avec `..`.
+  - `<target>` peut cibler un sous-champ au sein d'un objet complexe.
+
+> Pour les schémas YAML/JSON, utilisez directement la propriété `optionsFrom` au niveau du champ.
+
+Exemples :
+
+```hcl
+variable "subnet_name" {
+  description = "Nom du subnet. @optionsFrom(subnet_name = /subnets)"
+  type        = string
+}
+
+variable "internal_token" {
+  description = "Champ interne ignoré par le générateur. @ignore"
+  type        = string
+  default     = "hidden"
 }
 ```
 
@@ -261,6 +301,7 @@ Chaque élément du tableau `fields` comporte les propriétés suivantes :
 | `required` | `boolean` | Optionnel | Rend le champ obligatoire (ajoute un astérisque rouge et bloque la validation). |
 | `default` | `any` | Optionnel | Valeur par défaut préremplie dans le formulaire au chargement. |
 | `options` | `array` | Requis si `select` | Liste d'options sous la forme simple `["dev", "prod"]` ou d'objets `[{"value": "dev", "label": "Développement"}]`. |
+| `optionsFrom` | `string` | Optionnel | Chemin vers une autre valeur/collection existante dans le schéma (`/subnets`, `../add_volumes`). Utilisé pour remplir dynamiquement un `select`. |
 | `itemType` | `string` | Requis si `array` | Type des éléments du tableau (`string`, `integer`, `number`, `boolean`, `object`). |
 | `fields` | `array` | Requis si `object` (ou `array` d'objets) | Liste récursive des sous-champs composant la structure imbriquée. |
 | `dynamicKeys` | `boolean` | Optionnel | Si `true`, l'objet est rendu comme une carte dont les clés sont ajoutées à la volée. |
