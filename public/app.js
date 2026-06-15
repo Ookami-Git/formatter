@@ -523,11 +523,12 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
         };
 
         const updateEmptyState = () => {
-          const emptyState = objectContainer.querySelector('.array-empty-state');
+          const emptyState = objectContainer.querySelector(':scope > [data-dynamic-object-empty-state="true"]');
           if (entriesList.children.length === 0) {
             if (!emptyState) {
               const empty = document.createElement('div');
               empty.className = 'array-empty-state';
+              empty.dataset.dynamicObjectEmptyState = 'true';
               empty.textContent = 'Aucune entrée définie.';
               objectContainer.insertBefore(empty, btnAddEntry);
             }
@@ -830,7 +831,7 @@ function extractFieldValue(formGroup, field) {
         const dynamicData = {};
         const entryCards = dynamicContainer.querySelectorAll(':scope > [data-dynamic-object-entries-list="true"] > .dynamic-object-entry');
         entryCards.forEach(entryCard => {
-          const keyInput = entryCard.querySelector(':scope > .array-item-content > [data-dynamic-object-key="true"]');
+          const keyInput = entryCard.querySelector(':scope .array-item-content [data-dynamic-object-key="true"]');
           const valueGroup = entryCard.querySelector(':scope > .dynamic-object-value');
           const entryKey = keyInput ? keyInput.value.trim() : '';
 
@@ -1267,7 +1268,7 @@ function populateFormFromData(data, fields) {
                 const entryCard = entriesList.lastElementChild;
                 if (!entryCard) return;
 
-                const keyInput = entryCard.querySelector(':scope > .array-item-content > [data-dynamic-object-key="true"]');
+                const keyInput = entryCard.querySelector(':scope .array-item-content [data-dynamic-object-key="true"]');
                 if (keyInput) {
                   keyInput.value = entryName;
                 }
