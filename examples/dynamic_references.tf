@@ -1,6 +1,6 @@
 variable "subnets" {
   type        = list(string)
-  description = "A global list of tools."
+  description = "A global list of tools. @ignore"
   default     = ["a", "b", "c"]
 }
 
