@@ -1346,6 +1346,108 @@ function populateFieldElement(formGroup, field, value) {
       const numInput = formGroup.querySelector('input[type="number"]');
       if (numInput) numInput.value = value;
       break;
+    case 'object':
+      if (field.dynamicKeys) {
+        const dynamicContainer = formGroup.querySelector(':scope > [data-dynamic-object-container="true"]');
+        const entriesList = dynamicContainer ? dynamicContainer.querySelector(':scope > [data-dynamic-object-entries-list="true"]') : null;
+        const addButton = dynamicContainer ? dynamicContainer.querySelector(':scope > button') : null;
+
+        if (!dynamicContainer || !entriesList || !addButton || !value || typeof value !== 'object' || Array.isArray(value)) {
+          break;
+        }
+
+        entriesList.innerHTML = '';
+        Object.entries(value).forEach(([entryName, entryValue]) => {
+          addButton.click();
+          const entryCard = entriesList.lastElementChild;
+          if (!entryCard) return;
+
+          const keyInput = entryCard.querySelector(':scope .array-item-content [data-dynamic-object-key="true"]');
+          if (keyInput) {
+            keyInput.value = entryName;
+          }
+
+          const valueGroup = entryCard.querySelector(':scope > .dynamic-object-value');
+          if (valueGroup && field.fields && entryValue && typeof entryValue === 'object' && !Array.isArray(entryValue)) {
+            field.fields.forEach(subField => {
+              const subValue = entryValue[subField.name];
+              if (subValue === undefined) return;
+              const subGroup = valueGroup.querySelector(`:scope > [data-field-name="${subField.name}"]`);
+              if (subGroup) {
+                populateFieldElement(subGroup, subField, subValue);
+              }
+            });
+          }
+        });
+        break;
+      }
+
+      const objectContainer = formGroup.querySelector(':scope > [data-object-container="true"]');
+      if (!objectContainer || !field.fields || !value || typeof value !== 'object' || Array.isArray(value)) {
+        break;
+      }
+
+      field.fields.forEach(subField => {
+        const subValue = value[subField.name];
+        if (subValue === undefined) return;
+        const subGroup = objectContainer.querySelector(`:scope > [data-field-name="${subField.name}"]`);
+        if (subGroup) {
+          populateFieldElement(subGroup, subField, subValue);
+        }
+      });
+      break;
+
+    case 'array': {
+      const arrayContainer = formGroup.querySelector(':scope > .array-container');
+      const itemsList = arrayContainer ? arrayContainer.querySelector(':scope > [data-array-items-list="true"]') : null;
+      const addButton = arrayContainer ? arrayContainer.querySelector(':scope > button') : null;
+
+      if (!arrayContainer || !itemsList || !addButton) {
+        break;
+      }
+
+      const isMap = field.itemType === 'object' &&
+        field.fields && field.fields.length === 2 &&
+        field.fields[0].name === 'key' &&
+        field.fields[1].name === 'value';
+
+      let items = value;
+      if (isMap && items && typeof items === 'object' && !Array.isArray(items)) {
+        items = Object.entries(items).map(([k, v]) => ({ key: k, value: v }));
+      }
+
+      if (!Array.isArray(items)) {
+        break;
+      }
+
+      itemsList.innerHTML = '';
+      items.forEach(itemValue => {
+        addButton.click();
+        const itemCard = itemsList.lastElementChild;
+        if (!itemCard) return;
+
+        if (field.itemType === 'object') {
+          if (!field.fields || !itemValue || typeof itemValue !== 'object' || Array.isArray(itemValue)) {
+            return;
+          }
+
+          field.fields.forEach(subField => {
+            const subValue = itemValue[subField.name];
+            if (subValue === undefined) return;
+            const subGroup = itemCard.querySelector(`:scope > .array-item-content > [data-field-name="${subField.name}"]`);
+            if (subGroup) {
+              populateFieldElement(subGroup, subField, subValue);
+            }
+          });
+        } else {
+          const valueGroup = itemCard.querySelector(':scope > .array-item-content > [data-field-name="value"]');
+          if (valueGroup) {
+            populateFieldElement(valueGroup, { type: field.itemType || 'string' }, itemValue);
+          }
+        }
+      });
+      break;
+    }
     case 'string':
     default:
       const txtInput = formGroup.querySelector('input[type="text"]');
