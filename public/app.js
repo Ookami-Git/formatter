@@ -1916,16 +1916,9 @@ function summarizeObjectContainer(container) {
       const sel = group.querySelector('select');
       valStr = sel && sel.value ? `"${sel.value}"` : '';
     } else if (type === 'object') {
-      const isDynamic = group.querySelector(':scope > [data-dynamic-object-container="true"]');
-      if (isDynamic) {
-        valStr = summarizeDynamicObjectContainer(isDynamic);
-      } else {
-        const subObjectCard = group.querySelector(':scope > .nested-object-card');
-        valStr = summarizeObjectContainer(subObjectCard);
-      }
+      valStr = '{...}';
     } else if (type === 'array') {
-      const arrayContainer = group.querySelector(':scope > .array-container');
-      valStr = summarizeArrayContainer(arrayContainer);
+      valStr = '[...]';
     } else {
       // string, number, integer
       const sel = group.querySelector('select');
@@ -1945,7 +1938,8 @@ function summarizeObjectContainer(container) {
   });
   
   if (parts.length === 0) return '{ }';
-  return `{ ${parts.join(', ')} }`;
+  const summary = `{ ${parts.join(', ')} }`;
+  return summary.length > 60 ? summary.substring(0, 57) + '...' : summary;
 }
 
 function summarizeArrayContainer(container) {
@@ -1960,13 +1954,20 @@ function summarizeArrayContainer(container) {
   const isObjectArray = Array.from(itemCards).some(card => card.dataset.itemKind === 'object');
   
   if (isObjectArray) {
-    const items = [];
+    const names = [];
     itemCards.forEach(card => {
-      const itemContent = card.querySelector(':scope > .array-item-content');
-      const itemSummary = summarizeObjectContainer(itemContent);
-      items.push(itemSummary);
+      const nameInput = card.querySelector('[data-field-name="name"] input, [data-field-name="key"] input, [data-field-name="id"] input, [data-field-name="label"] input, [data-field-name="title"] input');
+      if (nameInput && nameInput.value.trim() !== '') {
+        names.push(nameInput.value.trim());
+      }
     });
-    return `[ ${items.join(', ')} ]`;
+    
+    if (names.length > 0) {
+      const namesStr = names.join(', ');
+      const displayStr = namesStr.length > 40 ? namesStr.substring(0, 37) + '...' : namesStr;
+      return `[ ${itemCards.length} élém. : ${displayStr} ]`;
+    }
+    return `[ ${itemCards.length} élément${itemCards.length > 1 ? 's' : ''} ]`;
   } else {
     const vals = [];
     itemCards.forEach(card => {
@@ -1978,7 +1979,13 @@ function summarizeArrayContainer(container) {
         }
       }
     });
-    return `[ ${vals.join(', ')} ]`;
+    
+    if (vals.length > 0) {
+      const valsStr = vals.join(', ');
+      const displayStr = valsStr.length > 40 ? valsStr.substring(0, 37) + '...' : valsStr;
+      return `[ ${displayStr} ]`;
+    }
+    return `[ ${itemCards.length} élément${itemCards.length > 1 ? 's' : ''} ]`;
   }
 }
 
@@ -1994,15 +2001,17 @@ function summarizeDynamicObjectContainer(container) {
   const keys = [];
   entryCards.forEach(card => {
     const keyInput = card.querySelector(':scope .array-item-content [data-dynamic-object-key="true"]');
-    const key = keyInput ? keyInput.value.trim() : '';
-    if (key) {
-      const valueGroup = card.querySelector(':scope > .dynamic-object-value');
-      const valSummary = summarizeObjectContainer(valueGroup);
-      keys.push(`"${key}": ${valSummary}`);
+    if (keyInput && keyInput.value.trim() !== '') {
+      keys.push(keyInput.value.trim());
     }
   });
   
-  return `{ ${keys.join(', ')} }`;
+  if (keys.length > 0) {
+    const keysStr = keys.join(', ');
+    const displayStr = keysStr.length > 40 ? keysStr.substring(0, 37) + '...' : keysStr;
+    return `{ ${displayStr} }`;
+  }
+  return `{ ${entryCards.length} entrée${entryCards.length > 1 ? 's' : ''} }`;
 }
 
 function updateCollapsePreviews() {
@@ -2027,9 +2036,6 @@ function updateCollapsePreviews() {
         summaryText = summarizeArrayContainer(arrayContainer);
       }
       
-      if (summaryText.length > 120) {
-        summaryText = summaryText.substring(0, 117) + '...';
-      }
       preview.textContent = summaryText;
       return;
     }
@@ -2043,10 +2049,6 @@ function updateCollapsePreviews() {
       } else if (itemCard.dataset.itemKind === 'object') {
         const itemContent = itemCard.querySelector(':scope > .array-item-content');
         summaryText = summarizeObjectContainer(itemContent);
-      }
-      
-      if (summaryText.length > 120) {
-        summaryText = summaryText.substring(0, 117) + '...';
       }
       preview.textContent = summaryText;
     }
