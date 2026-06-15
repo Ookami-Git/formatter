@@ -200,27 +200,27 @@ function pathBasename(pathStr) {
 
 function updateAppHeader() {
   if (!appSchema) return;
-  
+
   elAppTitle.textContent = "Formulaire de Configuration";
-  
+
   const sourceName = currentConfigMeta ? pathBasename(currentConfigMeta.source) : '';
   const sourceTypeLabel = currentConfigMeta && currentConfigMeta.sourceType === 'git' ? 'Git' : 'Local';
   const sourceTypeClass = currentConfigMeta ? currentConfigMeta.sourceType : 'local';
-  
+
   let schemaTitle = '';
-  
+
   if (isMultiDoc) {
     const activeSchema = appSchema[activeTabIndex].schema;
     schemaTitle = activeSchema.title || 'Multi-documents';
   } else {
     schemaTitle = appSchema.title || 'Configuration';
   }
-  
+
   let subtitleHtml = `Schéma : <strong>${schemaTitle}</strong>`;
   if (currentConfigMeta) {
     subtitleHtml += ` <span class="header-separator">•</span> Source : <span class="source-tag source-${sourceTypeClass}" title="${currentConfigMeta.source}">${sourceName} (${sourceTypeLabel})</span>`;
   }
-  
+
   elAppDescription.innerHTML = subtitleHtml;
 }
 
@@ -323,6 +323,35 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
     descEl.className = 'form-desc';
     descEl.textContent = field.description;
     formGroup.appendChild(descEl);
+  }
+
+  if (field.optionsFrom && field.type !== 'array') {
+    const select = document.createElement('select');
+    select.className = 'form-control';
+    select.name = fieldPath;
+    select.required = !!field.required;
+    select.dataset.fieldBind = 'select';
+    select.dataset.optionsFrom = field.optionsFrom;
+
+    if (!field.required) {
+      const emptyOption = document.createElement('option');
+      emptyOption.value = '';
+      emptyOption.textContent = '-- Non spécifié (optionnel) --';
+      select.appendChild(emptyOption);
+    }
+
+    const finalVal = cachedVal !== undefined ? cachedVal : (field.default !== undefined ? field.default : '');
+    if (finalVal) {
+      const opt = document.createElement('option');
+      opt.value = finalVal;
+      opt.textContent = finalVal;
+      select.appendChild(opt);
+      select.value = finalVal;
+    } else {
+      select.value = '';
+    }
+    formGroup.appendChild(select);
+    return formGroup;
   }
 
   // Render based on field type
@@ -633,7 +662,8 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
             label: 'Valeur',
             type: field.itemType || 'string',
             required: true,
-            default: initialVal !== null ? initialVal : ''
+            default: initialVal !== null ? initialVal : '',
+            optionsFrom: field.optionsFrom
           };
           const primEl = createFieldElement(primitiveField, uniquePath);
           if (primEl) {
@@ -820,6 +850,8 @@ function extractFieldValue(formGroup, field) {
       return numInput && numInput.value !== '' ? parseFloat(numInput.value) : undefined;
 
     case 'string':
+      const selInput = formGroup.querySelector('select');
+      if (selInput) return selInput.value;
       const txtInput = formGroup.querySelector('input[type="text"]');
       return txtInput ? txtInput.value : '';
 
@@ -1031,6 +1063,12 @@ function updateLiveOutput() {
   }
 
   let formData = extractFormData();
+  const selectsChanged = updateDynamicDropdowns(formData);
+  // If updateDynamicDropdowns changed select values programmatically,
+  // re-extract formData so the rendered output reflects the new selections.
+  if (selectsChanged) {
+    formData = extractFormData();
+  }
 
   // Clean empty values if checkbox is not checked
   if (elChkKeepEmpty && !elChkKeepEmpty.checked) {
@@ -1550,7 +1588,7 @@ async function loadGitBranches(activeBranch) {
     if (activeBranch) elSelectGitBranch.value = activeBranch;
     return;
   }
-  
+
   try {
     const response = await fetch('/api/branches');
     if (!response.ok) {
@@ -1559,14 +1597,14 @@ async function loadGitBranches(activeBranch) {
     const result = await response.json();
     if (result.success && (Array.isArray(result.branches) || Array.isArray(result.tags))) {
       elSelectGitBranch.innerHTML = '';
-      
+
       let branchToSelect = activeBranch;
-      
+
       // Render Branches Group
       if (Array.isArray(result.branches) && result.branches.length > 0) {
         const branchesGroup = document.createElement('optgroup');
         branchesGroup.label = 'Branches';
-        
+
         result.branches.forEach(branch => {
           const opt = document.createElement('option');
           opt.value = branch;
@@ -1575,12 +1613,12 @@ async function loadGitBranches(activeBranch) {
         });
         elSelectGitBranch.appendChild(branchesGroup);
       }
-      
+
       // Render Tags Group
       if (Array.isArray(result.tags) && result.tags.length > 0) {
         const tagsGroup = document.createElement('optgroup');
         tagsGroup.label = 'Tags / Versions';
-        
+
         result.tags.forEach(tag => {
           const opt = document.createElement('option');
           opt.value = tag;
@@ -1608,5 +1646,106 @@ async function loadGitBranches(activeBranch) {
   } catch (error) {
     console.error('Error fetching branches/tags:', error);
   }
+}
+
+// Returns true if any select value was changed programmatically (to signal
+// that formData must be re-extracted before rendering the output).
+function updateDynamicDropdowns(formData) {
+  const selects = elFormFieldsContainer.querySelectorAll('select[data-options-from]');
+  let selectChanged = false;
+  selects.forEach(select => {
+    const optionsFrom = select.dataset.optionsFrom;
+    const fieldPath = select.name;
+    const currentValue = select.value; // Save value BEFORE rebuilding options
+
+    // 1. Resolve Path
+    // Parse name path segments, e.g. "vms.su6-rie-wk-3.vgs.vg02.disks[0].value" -> ['vms', 'su6-rie-wk-3', 'vgs', 'vg02', 'disks', '0', 'value']
+    const rawSegments = fieldPath.split(/\.|\[|\]/).filter(Boolean);
+
+    // Filter out array indices and primitive wrapper keys ('value') from the end
+    while (rawSegments.length > 0) {
+      const last = rawSegments[rawSegments.length - 1];
+      if (!isNaN(Number(last)) || last === 'value') {
+        rawSegments.pop();
+      } else {
+        break;
+      }
+    }
+    // Pop the field name itself to get the parent container path
+    if (rawSegments.length > 0) {
+      rawSegments.pop();
+    }
+
+    let resolvedPath = [];
+    if (optionsFrom.startsWith('/')) {
+      // Absolute path
+      resolvedPath = optionsFrom.split('/').filter(Boolean);
+    } else {
+      // Relative path
+      resolvedPath = [...rawSegments];
+      const relSegments = optionsFrom.split('/');
+      relSegments.forEach(seg => {
+        if (seg === '..') {
+          resolvedPath.pop();
+        } else if (seg && seg !== '.') {
+          resolvedPath.push(seg);
+        }
+      });
+    }
+
+    // 2. Fetch value from formData
+    let val = formData;
+    for (const seg of resolvedPath) {
+      if (val && typeof val === 'object') {
+        val = val[seg];
+      } else {
+        val = undefined;
+        break;
+      }
+    }
+
+    // 3. Extract choices
+    let choices = [];
+    if (val) {
+      if (Array.isArray(val)) {
+        choices = val.filter(item => typeof item === 'string' || typeof item === 'number');
+      } else if (typeof val === 'object') {
+        choices = Object.keys(val);
+      } else {
+        choices = [String(val)];
+      }
+    }
+
+    // 4. Update dropdown options
+    select.innerHTML = '';
+    const isRequired = select.required;
+    if (!isRequired) {
+      const emptyOption = document.createElement('option');
+      emptyOption.value = '';
+      emptyOption.textContent = '-- Non spécifié (optionnel) --';
+      select.appendChild(emptyOption);
+    }
+
+    let valuePreserved = false;
+    choices.forEach(choice => {
+      const opt = document.createElement('option');
+      opt.value = choice;
+      opt.textContent = choice;
+      if (choice === currentValue) {
+        opt.selected = true;
+        valuePreserved = true;
+      }
+      select.appendChild(opt);
+    });
+
+    const newValue = valuePreserved ? currentValue : (isRequired && choices.length > 0 ? choices[0] : '');
+    select.value = newValue;
+
+    // Detect whether the select value changed programmatically
+    if (select.value !== currentValue) {
+      selectChanged = true;
+    }
+  });
+  return selectChanged;
 }
 
