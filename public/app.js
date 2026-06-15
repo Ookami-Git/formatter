@@ -5,6 +5,7 @@ let isMultiDoc = false;
 let activeTabIndex = 0;
 let tabDataCache = []; // Cache for form state per tab
 let currentConfigMeta = null;
+const collapsedPaths = new Set();
 
 // DOM Elements
 const elAppTitle = document.getElementById('app-title');
@@ -288,7 +289,8 @@ function renderForm(fields, cache = null) {
 
 // Create individual form control wrapper based on field configuration
 function createFieldElement(field, parentPath = '', cachedVal = undefined) {
-  const fieldPath = parentPath ? `${parentPath}.${field.name}` : field.name;
+  const baseFieldPath = parentPath ? `${parentPath}.${field.name}` : field.name;
+  const fieldPath = isMultiDoc ? `tab${activeTabIndex}.${baseFieldPath}` : baseFieldPath;
 
   const formGroup = document.createElement('div');
   formGroup.className = 'form-group';
@@ -318,11 +320,47 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
   labelContainer.appendChild(labelEl);
   formGroup.appendChild(labelContainer);
 
-  if (field.description) {
-    const descEl = document.createElement('p');
-    descEl.className = 'form-desc';
-    descEl.textContent = field.description;
-    formGroup.appendChild(descEl);
+  const isCollapsible = field.type === 'object' || field.type === 'array';
+  if (isCollapsible) {
+    labelContainer.classList.add('collapsible');
+    
+    // Add chevron SVG icon
+    const chevronSpan = document.createElement('span');
+    chevronSpan.className = 'chevron-wrapper';
+    chevronSpan.innerHTML = `
+      <svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="6 9 12 15 18 9"></polyline>
+      </svg>
+    `;
+    labelContainer.insertBefore(chevronSpan, labelContainer.firstChild);
+
+    // Create a container for the inline preview summary
+    const previewEl = document.createElement('span');
+    previewEl.className = 'collapse-preview';
+    previewEl.dataset.previewPath = fieldPath;
+    labelContainer.appendChild(previewEl);
+
+    // Add click handler to toggle collapse state
+    labelContainer.addEventListener('click', (e) => {
+      if (e.target.closest('.regex-hint-badge')) return;
+      
+      const collapsed = formGroup.classList.toggle('is-collapsed');
+      if (collapsed) {
+        collapsedPaths.add(fieldPath);
+      } else {
+        collapsedPaths.delete(fieldPath);
+      }
+      
+      // Update preview text immediately
+      updateCollapsePreviews();
+      // Update live output
+      updateLiveOutput();
+    });
+
+    // Restore collapse state if saved
+    if (collapsedPaths.has(fieldPath)) {
+      formGroup.classList.add('is-collapsed');
+    }
   }
 
   if (field.optionsFrom && field.type !== 'array') {
@@ -470,10 +508,12 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
         btnAddEntry.style.alignSelf = 'flex-start';
         btnAddEntry.textContent = 'Ajouter une entrée';
 
+
+
         let entryIndex = 0;
         const createEntryRow = (entryName = '', initialVal = null) => {
           const entryCard = document.createElement('div');
-          entryCard.className = 'array-item-card dynamic-object-entry';
+          entryCard.className = 'array-item-card dynamic-object-entry has-header';
           entryCard.dataset.dynamicObjectEntryIndex = entryIndex;
 
           const entryContent = document.createElement('div');
@@ -536,9 +576,45 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
             }, 180);
           });
 
+          const entryPath = `${fieldPath}[entry_${entryIndex}]`;
+
+          const entryHeader = document.createElement('div');
+          entryHeader.className = 'array-item-header';
+
+          const titleWrapper = document.createElement('div');
+          titleWrapper.className = 'array-item-title-wrapper';
+          titleWrapper.innerHTML = `
+            <svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            <span class="array-item-title">Entrée : ${entryName || '(sans nom)'}</span>
+            <span class="collapse-preview" data-preview-path="${entryPath}"></span>
+          `;
+
+          const titleEl = titleWrapper.querySelector('.array-item-title');
+          keyInput.addEventListener('input', () => {
+            titleEl.textContent = `Entrée : ${keyInput.value.trim() || '(sans nom)'}`;
+          });
+
+          titleWrapper.addEventListener('click', () => {
+            const collapsed = entryCard.classList.toggle('is-collapsed');
+            if (collapsed) {
+              collapsedPaths.add(entryPath);
+            } else {
+              collapsedPaths.delete(entryPath);
+            }
+            updateCollapsePreviews();
+          });
+
+          if (collapsedPaths.has(entryPath)) {
+            entryCard.classList.add('is-collapsed');
+          }
+
+          entryHeader.appendChild(titleWrapper);
+          entryHeader.appendChild(btnRemove);
+          entryCard.appendChild(entryHeader);
           entryCard.appendChild(entryContent);
           entryCard.appendChild(valueGroup);
-          entryCard.appendChild(btnRemove);
 
           const newInputs = entryCard.querySelectorAll('input, select, textarea');
           newInputs.forEach(inp => {
@@ -629,7 +705,6 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
       let itemIndex = 0;
       const createItemRow = (initialVal = null) => {
         const itemCard = document.createElement('div');
-        itemCard.className = 'array-item-card';
         itemCard.dataset.arrayItemIndex = itemIndex;
 
         const itemContent = document.createElement('div');
@@ -637,42 +712,6 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
 
         // Render inputs depending on itemType
         const uniquePath = `${fieldPath}[${itemIndex}]`;
-
-        if (field.itemType === 'object') {
-          // Object item: Render each subfield inside the item card
-          itemCard.dataset.itemKind = 'object';
-          if (field.fields && Array.isArray(field.fields)) {
-            field.fields.forEach(subField => {
-              // Copy field configuration, set unique name and load default/initial value
-              const itemSubField = { ...subField };
-              if (initialVal && initialVal[subField.name] !== undefined) {
-                itemSubField.default = initialVal[subField.name];
-              }
-              const subEl = createFieldElement(itemSubField, uniquePath);
-              if (subEl) {
-                itemContent.appendChild(subEl);
-              }
-            });
-          }
-        } else {
-          // Primitive item (string, number, integer, boolean)
-          itemCard.dataset.itemKind = 'primitive';
-          const primitiveField = {
-            name: 'value',
-            label: 'Valeur',
-            type: field.itemType || 'string',
-            required: true,
-            default: initialVal !== null ? initialVal : '',
-            optionsFrom: field.optionsFrom
-          };
-          const primEl = createFieldElement(primitiveField, uniquePath);
-          if (primEl) {
-            // Remove label for cleaner array display
-            const lbl = primEl.querySelector('.form-label-container');
-            if (lbl) lbl.remove();
-            itemContent.appendChild(primEl);
-          }
-        }
 
         const btnRemove = document.createElement('button');
         btnRemove.type = 'button';
@@ -689,12 +728,86 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
           setTimeout(() => {
             itemCard.remove();
             updateEmptyState();
+            updateAllItemTitles();
             updateLiveOutput();
           }, 180);
         });
 
-        itemCard.appendChild(itemContent);
-        itemCard.appendChild(btnRemove);
+        if (field.itemType === 'object') {
+          // Object item: Render each subfield inside the item card, make it collapsible
+          itemCard.className = 'array-item-card has-header';
+          itemCard.dataset.itemKind = 'object';
+
+          const itemPath = `${fieldPath}[item_${itemIndex}]`;
+
+          const itemHeader = document.createElement('div');
+          itemHeader.className = 'array-item-header';
+
+          const titleWrapper = document.createElement('div');
+          titleWrapper.className = 'array-item-title-wrapper';
+          titleWrapper.innerHTML = `
+            <svg class="collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            <span class="array-item-title">Élément n°${itemIndex + 1}</span>
+            <span class="collapse-preview" data-preview-path="${itemPath}"></span>
+          `;
+
+          titleWrapper.addEventListener('click', () => {
+            const collapsed = itemCard.classList.toggle('is-collapsed');
+            if (collapsed) {
+              collapsedPaths.add(itemPath);
+            } else {
+              collapsedPaths.delete(itemPath);
+            }
+            updateCollapsePreviews();
+          });
+
+          if (collapsedPaths.has(itemPath)) {
+            itemCard.classList.add('is-collapsed');
+          }
+
+          itemHeader.appendChild(titleWrapper);
+          itemHeader.appendChild(btnRemove);
+          itemCard.appendChild(itemHeader);
+
+          if (field.fields && Array.isArray(field.fields)) {
+            field.fields.forEach(subField => {
+              // Copy field configuration, set unique name and load default/initial value
+              const itemSubField = { ...subField };
+              if (initialVal && initialVal[subField.name] !== undefined) {
+                itemSubField.default = initialVal[subField.name];
+              }
+              const subEl = createFieldElement(itemSubField, uniquePath);
+              if (subEl) {
+                itemContent.appendChild(subEl);
+              }
+            });
+          }
+          itemCard.appendChild(itemContent);
+        } else {
+          // Primitive item (string, number, integer, boolean)
+          itemCard.className = 'array-item-card';
+          itemCard.dataset.itemKind = 'primitive';
+
+          const primitiveField = {
+            name: 'value',
+            label: 'Valeur',
+            type: field.itemType || 'string',
+            required: true,
+            default: initialVal !== null ? initialVal : '',
+            optionsFrom: field.optionsFrom
+          };
+          const primEl = createFieldElement(primitiveField, uniquePath);
+          if (primEl) {
+            // Remove label for cleaner array display
+            const lbl = primEl.querySelector('.form-label-container');
+            if (lbl) lbl.remove();
+            itemContent.appendChild(primEl);
+          }
+          itemCard.appendChild(itemContent);
+          itemCard.appendChild(btnRemove);
+        }
 
         // Listen to dynamic inputs inside new row
         const newInputs = itemCard.querySelectorAll('input, select, textarea');
@@ -1056,6 +1169,10 @@ function cleanEmptyValues(obj) {
 // Refresh code output panel
 function updateLiveOutput() {
   if (!appSchema) return;
+
+  // Update collapsible previews and item titles
+  updateAllItemTitles();
+  updateCollapsePreviews();
 
   // Update cache for the active tab with current values
   if (isMultiDoc) {
@@ -1747,5 +1864,192 @@ function updateDynamicDropdowns(formData) {
     }
   });
   return selectChanged;
+}
+
+// ===== Collapsible Previews & Titles =====
+
+function updateAllItemTitles() {
+  const itemCards = document.querySelectorAll('.array-item-card.has-header');
+  itemCards.forEach((itemCard) => {
+    const titleEl = itemCard.querySelector(':scope > .array-item-header .array-item-title');
+    if (!titleEl) return;
+    
+    // Check if it is a dynamic-key entry
+    if (itemCard.classList.contains('dynamic-object-entry')) {
+      const keyInput = itemCard.querySelector(':scope .array-item-content [data-dynamic-object-key="true"]');
+      if (keyInput) {
+        titleEl.textContent = `Entrée : ${keyInput.value.trim() || '(sans nom)'}`;
+      }
+      return;
+    }
+    
+    // Otherwise it is an array item
+    const nameInput = itemCard.querySelector('[data-field-name="name"] input, [data-field-name="key"] input, [data-field-name="id"] input, [data-field-name="label"] input, [data-field-name="title"] input');
+    if (nameInput && nameInput.value.trim() !== '') {
+      titleEl.textContent = nameInput.value.trim();
+    } else {
+      // Find index relative to siblings in its parent items list
+      const itemsList = itemCard.closest('.array-items-list');
+      if (itemsList) {
+        const allItems = Array.from(itemsList.querySelectorAll(':scope > .array-item-card'));
+        const index = allItems.indexOf(itemCard);
+        titleEl.textContent = `Élément n°${index !== -1 ? index + 1 : 1}`;
+      }
+    }
+  });
+}
+
+function summarizeObjectContainer(container) {
+  if (!container) return '{ }';
+  const parts = [];
+  const childGroups = container.querySelectorAll(':scope > .form-group');
+  
+  childGroups.forEach(group => {
+    const name = group.dataset.fieldName;
+    const type = group.dataset.fieldType;
+    let valStr = '';
+    
+    if (type === 'boolean') {
+      const cb = group.querySelector('input[type="checkbox"]');
+      valStr = cb ? (cb.checked ? 'true' : 'false') : '';
+    } else if (type === 'select') {
+      const sel = group.querySelector('select');
+      valStr = sel && sel.value ? `"${sel.value}"` : '';
+    } else if (type === 'object') {
+      const isDynamic = group.querySelector(':scope > [data-dynamic-object-container="true"]');
+      if (isDynamic) {
+        valStr = summarizeDynamicObjectContainer(isDynamic);
+      } else {
+        const subObjectCard = group.querySelector(':scope > .nested-object-card');
+        valStr = summarizeObjectContainer(subObjectCard);
+      }
+    } else if (type === 'array') {
+      const arrayContainer = group.querySelector(':scope > .array-container');
+      valStr = summarizeArrayContainer(arrayContainer);
+    } else {
+      // string, number, integer
+      const sel = group.querySelector('select');
+      if (sel) {
+        valStr = sel.value ? `"${sel.value}"` : '';
+      } else {
+        const inp = group.querySelector('input');
+        if (inp && inp.value !== '') {
+          valStr = type === 'string' ? `"${inp.value}"` : inp.value;
+        }
+      }
+    }
+    
+    if (valStr !== '') {
+      parts.push(`${name}: ${valStr}`);
+    }
+  });
+  
+  if (parts.length === 0) return '{ }';
+  return `{ ${parts.join(', ')} }`;
+}
+
+function summarizeArrayContainer(container) {
+  if (!container) return '[ ]';
+  
+  const itemsList = container.querySelector(':scope > [data-array-items-list="true"]');
+  if (!itemsList) return '[ ]';
+  
+  const itemCards = itemsList.querySelectorAll(':scope > .array-item-card');
+  if (itemCards.length === 0) return '[ ]';
+  
+  const isObjectArray = Array.from(itemCards).some(card => card.dataset.itemKind === 'object');
+  
+  if (isObjectArray) {
+    const items = [];
+    itemCards.forEach(card => {
+      const itemContent = card.querySelector(':scope > .array-item-content');
+      const itemSummary = summarizeObjectContainer(itemContent);
+      items.push(itemSummary);
+    });
+    return `[ ${items.join(', ')} ]`;
+  } else {
+    const vals = [];
+    itemCards.forEach(card => {
+      const valueGroup = card.querySelector(':scope > .array-item-content > [data-field-name="value"]');
+      if (valueGroup) {
+        const inp = valueGroup.querySelector('input, select');
+        if (inp && inp.value !== '') {
+          vals.push(inp.type === 'number' ? inp.value : `"${inp.value}"`);
+        }
+      }
+    });
+    return `[ ${vals.join(', ')} ]`;
+  }
+}
+
+function summarizeDynamicObjectContainer(container) {
+  if (!container) return '{ }';
+  
+  const entriesList = container.querySelector(':scope > [data-dynamic-object-entries-list="true"]');
+  if (!entriesList) return '{ }';
+  
+  const entryCards = entriesList.querySelectorAll(':scope > .dynamic-object-entry');
+  if (entryCards.length === 0) return '{ }';
+  
+  const keys = [];
+  entryCards.forEach(card => {
+    const keyInput = card.querySelector(':scope .array-item-content [data-dynamic-object-key="true"]');
+    const key = keyInput ? keyInput.value.trim() : '';
+    if (key) {
+      const valueGroup = card.querySelector(':scope > .dynamic-object-value');
+      const valSummary = summarizeObjectContainer(valueGroup);
+      keys.push(`"${key}": ${valSummary}`);
+    }
+  });
+  
+  return `{ ${keys.join(', ')} }`;
+}
+
+function updateCollapsePreviews() {
+  const previews = document.querySelectorAll('.collapse-preview');
+  
+  previews.forEach(preview => {
+    const formGroup = preview.closest('.form-group');
+    if (formGroup && preview.closest('.form-label-container') && !preview.closest('.array-item-card')) {
+      const type = formGroup.dataset.fieldType;
+      let summaryText = '';
+      
+      if (type === 'object') {
+        const isDynamic = formGroup.querySelector(':scope > [data-dynamic-object-container="true"]');
+        if (isDynamic) {
+          summaryText = summarizeDynamicObjectContainer(isDynamic);
+        } else {
+          const objectCard = formGroup.querySelector(':scope > .nested-object-card');
+          summaryText = summarizeObjectContainer(objectCard);
+        }
+      } else if (type === 'array') {
+        const arrayContainer = formGroup.querySelector(':scope > .array-container');
+        summaryText = summarizeArrayContainer(arrayContainer);
+      }
+      
+      if (summaryText.length > 120) {
+        summaryText = summaryText.substring(0, 117) + '...';
+      }
+      preview.textContent = summaryText;
+      return;
+    }
+    
+    const itemCard = preview.closest('.array-item-card');
+    if (itemCard && preview.closest('.array-item-title-wrapper')) {
+      let summaryText = '';
+      if (itemCard.classList.contains('dynamic-object-entry')) {
+        const valueGroup = itemCard.querySelector(':scope > .dynamic-object-value');
+        summaryText = summarizeObjectContainer(valueGroup);
+      } else if (itemCard.dataset.itemKind === 'object') {
+        const itemContent = itemCard.querySelector(':scope > .array-item-content');
+        summaryText = summarizeObjectContainer(itemContent);
+      }
+      
+      if (summaryText.length > 120) {
+        summaryText = summaryText.substring(0, 117) + '...';
+      }
+      preview.textContent = summaryText;
+    }
+  });
 }
 

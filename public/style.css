@@ -942,3 +942,133 @@ code[class*="language-"] {
   margin-left: 4px;
   vertical-align: middle;
 }
+
+/* ── Collapsible Fields & Previews ────────────────────────────────────────── */
+
+/* Clickable headers for objects and arrays */
+.form-label-container.collapsible {
+  cursor: pointer;
+  user-select: none;
+  padding: 4px 8px;
+  margin-left: -8px;
+  margin-right: -8px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast), color var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+}
+
+.form-label-container.collapsible:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.form-label-container.collapsible:hover .form-label {
+  color: var(--color-primary-hover);
+}
+
+/* Chevron SVG styling */
+.collapse-icon {
+  width: 14px;
+  height: 14px;
+  transition: transform var(--transition-fast) ease;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.is-collapsed .collapse-icon {
+  transform: rotate(-90deg);
+}
+
+/* Collapse preview text */
+.collapse-preview {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  opacity: 0.8;
+  margin-left: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 450px;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.02);
+  display: none; /* Only show when collapsed */
+}
+
+.is-collapsed .collapse-preview {
+  display: inline-block;
+  animation: fadeIn var(--transition-fast) ease-out;
+}
+
+/* Hide content when collapsed */
+.form-group.is-collapsed > .nested-object-card,
+.form-group.is-collapsed > .array-container,
+.form-group.is-collapsed > .form-desc {
+  display: none !important;
+}
+
+/* Cards with headers (collapsible list items) */
+.array-item-card.has-header {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  transition: all var(--transition-normal);
+}
+
+.array-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
+  margin-bottom: 2px;
+}
+
+.array-item-title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  flex: 1;
+}
+
+.array-item-title-wrapper:hover .array-item-title {
+  color: var(--color-primary-hover);
+}
+
+.array-item-title-wrapper:hover .collapse-icon {
+  color: var(--color-primary-hover);
+}
+
+.array-item-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-main);
+  transition: color var(--transition-fast);
+}
+
+/* Hide inputs when card is collapsed */
+.array-item-card.is-collapsed > .array-item-content,
+.array-item-card.is-collapsed > .dynamic-object-value {
+  display: none !important;
+}
+
+/* Adjust card border when collapsed to look like a neat row */
+.array-item-card.is-collapsed {
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.01);
+}
+
+.array-item-card.is-collapsed .array-item-header {
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-bottom: 0;
+}
+
