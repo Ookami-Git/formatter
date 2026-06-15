@@ -13,6 +13,7 @@ Générateur de formulaire dynamique qui produit du **JSON**, **YAML** ou **HCL/
 
 - 🔄 **Live Preview** — Le résultat s'actualise en temps réel pendant la saisie
 - 📑 **Multi-documents YAML** — Séparateurs `---` convertis en onglets avec nommage via `# formatter_name:`
+- 🧩 **Objets dynamiques** — Les objets YAML peuvent avoir des clés libres comme `vm1`, `vm2` ou `node-a`
 - 🔀 **Formats de sortie** — JSON, YAML, HCL/tfvars en un clic
 - 📥 **Import** — Coller une configuration existante pour la modifier via le formulaire
 - 🔐 **Source Git privée** — Charger le schéma depuis un dépôt Git privé (GitHub/GitLab) via token
@@ -147,6 +148,35 @@ fields:
     type: select
     options: [dev, staging, prod]
     default: dev
+
+  - name: hosts
+    label: "Hôtes"
+    type: object
+    dynamicKeys: true
+    keyLabel: "Nom de l'hôte"
+    description: "Chaque entrée crée une clé dynamique dans l'objet final."
+    fields:
+      - name: ip
+        label: "Adresse IP"
+        type: string
+      - name: role
+        label: "Rôle"
+        type: string
+        default: worker
+```
+
+Avec `dynamicKeys: true`, le champ `object` n'est plus limité à des sous-propriétés connues à l'avance. L'utilisateur ajoute autant d'entrées qu'il veut, saisit la clé de chaque objet, puis remplit un sous-formulaire pour la valeur associée.
+
+Exemple de sortie générée:
+
+```yaml
+hosts:
+  vm1:
+    ip: 10.0.0.10
+    role: control-plane
+  vm2:
+    ip: 10.0.0.11
+    role: worker
 ```
 
 ### Multi-documents YAML (onglets)
@@ -199,6 +229,7 @@ variable "tags" {
 | `select` | Liste déroulante | Requiert `options` (ou extrait des blocs de validation Terraform). |
 | `object` | Carte imbriquée | Permet des sous-champs récursifs via la propriété `fields`. |
 | `array` | Liste dynamique | Supporte `itemType`. Si `itemType: object`, requiert la propriété `fields`. |
+| `object` avec `dynamicKeys: true` | Carte d'objets à clés libres | Chaque entrée affiche une clé éditable suivie d'un sous-formulaire `fields`. |
 
 ---
 
@@ -232,6 +263,8 @@ Chaque élément du tableau `fields` comporte les propriétés suivantes :
 | `options` | `array` | Requis si `select` | Liste d'options sous la forme simple `["dev", "prod"]` ou d'objets `[{"value": "dev", "label": "Développement"}]`. |
 | `itemType` | `string` | Requis si `array` | Type des éléments du tableau (`string`, `integer`, `number`, `boolean`, `object`). |
 | `fields` | `array` | Requis si `object` (ou `array` d'objets) | Liste récursive des sous-champs composant la structure imbriquée. |
+| `dynamicKeys` | `boolean` | Optionnel | Si `true`, l'objet est rendu comme une carte dont les clés sont ajoutées à la volée. |
+| `keyLabel` | `string` | Optionnel | Libellé du champ utilisé pour saisir la clé d'un objet dynamique. |
 | `validation` | `object` | Optionnel | Règles de validation. Supporté pour les champs de type `string` (voir ci-dessous). |
 
 ---

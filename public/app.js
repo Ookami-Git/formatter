@@ -425,24 +425,154 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
       break;
 
     case 'object':
-      // Nested fields container
-      const objectCard = document.createElement('div');
-      objectCard.className = 'nested-object-card';
-      objectCard.dataset.objectContainer = 'true';
+      if (field.dynamicKeys) {
+        // Dynamic object keys: render as a list of named entries, each holding the same object shape.
+        const objectContainer = document.createElement('div');
+        objectContainer.className = 'array-container dynamic-object-container';
+        objectContainer.dataset.dynamicObjectContainer = 'true';
 
-      if (field.fields && Array.isArray(field.fields)) {
-        field.fields.forEach(subField => {
-          const subCachedVal = cachedVal && cachedVal[subField.name] !== undefined ? cachedVal[subField.name] : undefined;
-          const subEl = createFieldElement(subField, fieldPath, subCachedVal);
-          if (subEl) {
-            objectCard.appendChild(subEl);
+        const entriesList = document.createElement('div');
+        entriesList.className = 'array-items-list';
+        entriesList.dataset.dynamicObjectEntriesList = 'true';
+
+        const btnAddEntry = document.createElement('button');
+        btnAddEntry.type = 'button';
+        btnAddEntry.className = 'btn btn-secondary btn-sm';
+        btnAddEntry.style.alignSelf = 'flex-start';
+        btnAddEntry.textContent = 'Ajouter une entrée';
+
+        let entryIndex = 0;
+        const createEntryRow = (entryName = '', initialVal = null) => {
+          const entryCard = document.createElement('div');
+          entryCard.className = 'array-item-card dynamic-object-entry';
+          entryCard.dataset.dynamicObjectEntryIndex = entryIndex;
+
+          const entryContent = document.createElement('div');
+          entryContent.className = 'array-item-content';
+
+          const keyGroup = document.createElement('div');
+          keyGroup.className = 'form-group dynamic-object-key-group';
+          keyGroup.dataset.fieldName = 'key';
+          keyGroup.dataset.fieldType = 'string';
+
+          const keyLabel = document.createElement('label');
+          keyLabel.className = 'form-label required';
+          keyLabel.textContent = field.keyLabel || 'Nom de l\'objet';
+          keyGroup.appendChild(keyLabel);
+
+          const keyInput = document.createElement('input');
+          keyInput.type = 'text';
+          keyInput.className = 'form-control';
+          keyInput.value = entryName;
+          keyInput.required = true;
+          keyInput.dataset.dynamicObjectKey = 'true';
+          keyGroup.appendChild(keyInput);
+
+          entryContent.appendChild(keyGroup);
+
+          const valueGroup = document.createElement('div');
+          valueGroup.className = 'nested-object-card dynamic-object-value';
+          valueGroup.dataset.fieldName = 'value';
+          valueGroup.dataset.fieldType = 'object';
+          valueGroup.dataset.objectContainer = 'true';
+
+          if (field.fields && Array.isArray(field.fields)) {
+            field.fields.forEach(subField => {
+              const subCachedVal = initialVal && initialVal[subField.name] !== undefined ? initialVal[subField.name] : undefined;
+              const subEl = createFieldElement(subField, `${fieldPath}.${entryName || 'entry'}`, subCachedVal);
+              if (subEl) {
+                valueGroup.appendChild(subEl);
+              }
+            });
+          } else {
+            valueGroup.innerHTML = '<p class="array-empty-state">Objet vide</p>';
           }
-        });
-      } else {
-        objectCard.innerHTML = '<p class="array-empty-state">Objet vide</p>';
-      }
 
-      formGroup.appendChild(objectCard);
+          const btnRemove = document.createElement('button');
+          btnRemove.type = 'button';
+          btnRemove.className = 'btn-remove-item';
+          btnRemove.title = 'Supprimer cette entrée';
+          btnRemove.innerHTML = `
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+            </svg>
+          `;
+
+          btnRemove.addEventListener('click', () => {
+            entryCard.style.animation = 'fadeIn 0.2s reverse ease-out';
+            setTimeout(() => {
+              entryCard.remove();
+              updateEmptyState();
+              updateLiveOutput();
+            }, 180);
+          });
+
+          entryCard.appendChild(entryContent);
+          entryCard.appendChild(valueGroup);
+          entryCard.appendChild(btnRemove);
+
+          const newInputs = entryCard.querySelectorAll('input, select, textarea');
+          newInputs.forEach(inp => {
+            inp.addEventListener('input', updateLiveOutput);
+            inp.addEventListener('change', updateLiveOutput);
+          });
+
+          entriesList.appendChild(entryCard);
+          entryIndex++;
+          updateEmptyState();
+        };
+
+        const updateEmptyState = () => {
+          const emptyState = objectContainer.querySelector('.array-empty-state');
+          if (entriesList.children.length === 0) {
+            if (!emptyState) {
+              const empty = document.createElement('div');
+              empty.className = 'array-empty-state';
+              empty.textContent = 'Aucune entrée définie.';
+              objectContainer.insertBefore(empty, btnAddEntry);
+            }
+          } else if (emptyState) {
+            emptyState.remove();
+          }
+        };
+
+        const objectValues = cachedVal !== undefined ? cachedVal : field.default;
+        if (objectValues && typeof objectValues === 'object' && !Array.isArray(objectValues)) {
+          Object.entries(objectValues).forEach(([entryName, entryValue]) => {
+            createEntryRow(entryName, entryValue);
+          });
+        }
+
+        btnAddEntry.addEventListener('click', () => {
+          createEntryRow();
+          updateLiveOutput();
+        });
+
+        objectContainer.appendChild(entriesList);
+        objectContainer.appendChild(btnAddEntry);
+        formGroup.appendChild(objectContainer);
+
+        updateEmptyState();
+      } else {
+        // Nested fields container
+        const objectCard = document.createElement('div');
+        objectCard.className = 'nested-object-card';
+        objectCard.dataset.objectContainer = 'true';
+
+        if (field.fields && Array.isArray(field.fields)) {
+          field.fields.forEach(subField => {
+            const subCachedVal = cachedVal && cachedVal[subField.name] !== undefined ? cachedVal[subField.name] : undefined;
+            const subEl = createFieldElement(subField, fieldPath, subCachedVal);
+            if (subEl) {
+              objectCard.appendChild(subEl);
+            }
+          });
+        } else {
+          objectCard.innerHTML = '<p class="array-empty-state">Objet vide</p>';
+        }
+
+        formGroup.appendChild(objectCard);
+      }
       break;
 
     case 'array':
@@ -693,6 +823,38 @@ function extractFieldValue(formGroup, field) {
       return txtInput ? txtInput.value : '';
 
     case 'object':
+      if (field.dynamicKeys) {
+        const dynamicContainer = formGroup.querySelector(':scope > [data-dynamic-object-container="true"]');
+        if (!dynamicContainer) return {};
+
+        const dynamicData = {};
+        const entryCards = dynamicContainer.querySelectorAll(':scope > [data-dynamic-object-entries-list="true"] > .dynamic-object-entry');
+        entryCards.forEach(entryCard => {
+          const keyInput = entryCard.querySelector(':scope > .array-item-content > [data-dynamic-object-key="true"]');
+          const valueGroup = entryCard.querySelector(':scope > .dynamic-object-value');
+          const entryKey = keyInput ? keyInput.value.trim() : '';
+
+          if (!entryKey || !valueGroup) return;
+
+          const entryValue = {};
+          if (field.fields) {
+            field.fields.forEach(subField => {
+              const subGroup = valueGroup.querySelector(`:scope > [data-field-name="${subField.name}"]`);
+              if (subGroup) {
+                const val = extractFieldValue(subGroup, subField);
+                if (val !== undefined) {
+                  entryValue[subField.name] = val;
+                }
+              }
+            });
+          }
+
+          dynamicData[entryKey] = entryValue;
+        });
+
+        return dynamicData;
+      }
+
       const objectContainer = formGroup.querySelector(':scope > [data-object-container="true"]');
       if (!objectContainer || !field.fields) return {};
 
@@ -960,7 +1122,11 @@ function getDefaultValues(fields) {
 
   fields.forEach(field => {
     if (field.type === 'object') {
-      defaults[field.name] = getDefaultValues(field.fields);
+      if (field.dynamicKeys) {
+        defaults[field.name] = field.default !== undefined ? field.default : {};
+      } else {
+        defaults[field.name] = getDefaultValues(field.fields);
+      }
     } else if (field.type === 'array') {
       if (field.default !== undefined) {
         defaults[field.name] = field.default;
@@ -1089,6 +1255,40 @@ function populateFormFromData(data, fields) {
         break;
 
       case 'object':
+        if (field.dynamicKeys) {
+          const dynamicContainer = formGroup.querySelector(':scope > [data-dynamic-object-container="true"]');
+          if (dynamicContainer && value && typeof value === 'object' && !Array.isArray(value)) {
+            const entriesList = dynamicContainer.querySelector(':scope > [data-dynamic-object-entries-list="true"]');
+            const addButton = dynamicContainer.querySelector(':scope > button');
+            if (entriesList && addButton) {
+              entriesList.innerHTML = '';
+              Object.entries(value).forEach(([entryName, entryValue]) => {
+                addButton.click();
+                const entryCard = entriesList.lastElementChild;
+                if (!entryCard) return;
+
+                const keyInput = entryCard.querySelector(':scope > .array-item-content > [data-dynamic-object-key="true"]');
+                if (keyInput) {
+                  keyInput.value = entryName;
+                }
+
+                const valueGroup = entryCard.querySelector(':scope > .dynamic-object-value');
+                if (valueGroup && field.fields && entryValue && typeof entryValue === 'object') {
+                  field.fields.forEach(subField => {
+                    const subValue = entryValue[subField.name];
+                    if (subValue === undefined) return;
+                    const subGroup = valueGroup.querySelector(`:scope > [data-field-name="${subField.name}"]`);
+                    if (subGroup) {
+                      populateFieldElement(subGroup, subField, subValue);
+                    }
+                  });
+                }
+              });
+            }
+          }
+          break;
+        }
+
         const objectContainer = formGroup.querySelector(':scope > [data-object-container="true"]');
         if (objectContainer && field.fields && typeof value === 'object') {
           // Recurse into nested objects
