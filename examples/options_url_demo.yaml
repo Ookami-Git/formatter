@@ -1,0 +1,61 @@
+title: "Démo Options URL Dynamiques"
+description: "Ce formulaire démontre le chargement d'options de sélection depuis une URL HTTP(S) avec différentes méthodes d'authentification et de filtrage."
+outputFormat: "yaml"
+fields:
+  - name: environment_simple
+    label: "Environnement (URL simple)"
+    type: "select"
+    description: "Charge les environnements à partir d'un chemin simple pointant vers un tableau JSON."
+    optionsUrl:
+      url: "http://localhost:3001/api/mock-options"
+      path: "simple_list"
+    required: true
+
+  - name: network_dotted
+    label: "Réseau (Notation pointée complexe)"
+    type: "select"
+    description: "Charge les réseaux en parcourant un objet complexe (project.all.networks)."
+    optionsUrl:
+      url: "http://localhost:3001/api/mock-options"
+      path: "project.all.networks"
+    required: true
+
+  - name: zone_keys
+    label: "Zone (Clés d'un objet)"
+    type: "select"
+    description: "Charge les options en utilisant les clés d'un objet JSON (key_value_object)."
+    optionsUrl:
+      url: "http://localhost:3001/api/mock-options"
+      path: "key_value_object"
+    required: true
+
+  - name: auth_bearer
+    label: "Authentification Bearer"
+    type: "select"
+    description: "Envoie un token Bearer statique dans l'en-tête Authorization."
+    optionsUrl:
+      url: "http://localhost:3001/api/mock-options"
+      path: "simple_list"
+      auth:
+        type: "bearer"
+        token: "mon-super-token-bearer"
+
+  - name: auth_env_var
+    label: "Authentification via Variable d'Environnement"
+    type: "select"
+    description: "Récupère le token d'authentification depuis la variable d'environnement PORT."
+    optionsUrl:
+      url: "http://localhost:3001/api/mock-options"
+      path: "simple_list"
+      auth:
+        type: "bearer"
+        tokenEnv: "PORT"
+
+  - name: network_list
+    label: "Liste de Réseaux Cibles"
+    type: "array"
+    itemType: "string"
+    description: "Tableau dynamique où chaque élément est un sélecteur alimenté par optionsUrl."
+    optionsUrl:
+      url: "http://localhost:3001/api/mock-options"
+      path: "project.all.networks"

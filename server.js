@@ -98,7 +98,7 @@ async function syncGitRepoDynamic(repoUrl, branch, token, forceRefresh) {
 }
 
 // Fetch content from an HTTP/HTTPS URL with SSL bypass and proxy support
-function fetchUrlContent(urlStr, ignoreSsl = false) {
+function fetchUrlContent(urlStr, ignoreSsl = false, customHeaders = {}) {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(urlStr);
     const isHttps = parsedUrl.protocol === 'https:';
@@ -108,7 +108,8 @@ function fetchUrlContent(urlStr, ignoreSsl = false) {
       method: 'GET',
       headers: {
         'User-Agent': 'ConfigFormGenerator/1.0',
-        'Accept': 'text/plain, application/json, text/yaml, */*'
+        'Accept': 'text/plain, application/json, text/yaml, */*',
+        ...customHeaders
       }
     };
 
@@ -386,6 +387,131 @@ app.get('/api/config', async (req, res) => {
       error: error.message
     });
   }
+});
+
+// Utility helper to navigate objects using dot and bracket notation
+function getValueByPath(obj, pathStr) {
+  if (!pathStr) return obj;
+  // Normalize brackets to dots, e.g., networks[0] -> networks.0
+  const normalizedPath = pathStr.replace(/\[['"]?([^\]'"]+)['"]?\]/g, '.$1');
+  const segments = normalizedPath.split('.').filter(Boolean);
+  let current = obj;
+  for (const segment of segments) {
+    if (current && typeof current === 'object') {
+      current = current[segment];
+    } else {
+      return undefined;
+    }
+  }
+  return current;
+}
+
+// Endpoint to fetch dynamic options from URL (POST)
+app.post('/api/options-url', async (req, res) => {
+  const { url, ignoreSsl, auth, path: pathStr } = req.body;
+  if (!url) {
+    return res.status(400).json({ success: false, error: "L'URL est requise." });
+  }
+
+  try {
+    const customHeaders = {};
+
+    // Handle authentication and secret resolution
+    if (auth && typeof auth === 'object') {
+      let resolvedToken = '';
+      let resolvedUsername = '';
+      let resolvedPassword = '';
+
+      if (auth.type === 'bearer') {
+        if (auth.tokenEnv && process.env[auth.tokenEnv]) {
+          resolvedToken = process.env[auth.tokenEnv];
+        } else if (auth.tokenFile && fs.existsSync(auth.tokenFile)) {
+          resolvedToken = fs.readFileSync(auth.tokenFile, 'utf8').trim();
+        } else {
+          resolvedToken = auth.token || '';
+        }
+
+        if (resolvedToken) {
+          customHeaders['Authorization'] = `Bearer ${resolvedToken}`;
+        }
+      } else if (auth.type === 'basic') {
+        resolvedUsername = auth.username || '';
+        if (auth.passwordEnv && process.env[auth.passwordEnv]) {
+          resolvedPassword = process.env[auth.passwordEnv];
+        } else if (auth.passwordFile && fs.existsSync(auth.passwordFile)) {
+          resolvedPassword = fs.readFileSync(auth.passwordFile, 'utf8').trim();
+        } else {
+          resolvedPassword = auth.password || '';
+        }
+
+        const creds = `${resolvedUsername}:${resolvedPassword}`;
+        const encoded = Buffer.from(creds).toString('base64');
+        customHeaders['Authorization'] = `Basic ${encoded}`;
+      }
+    }
+
+    // Fetch the URL content with bypass SSL and custom headers
+    const rawData = await fetchUrlContent(url, !!ignoreSsl, customHeaders);
+
+    // Try parsing as JSON first, and fallback to YAML
+    let parsedData;
+    try {
+      parsedData = JSON.parse(rawData);
+    } catch {
+      try {
+        parsedData = yaml.load(rawData);
+      } catch (err) {
+        throw new Error("Impossible de parser le contenu renvoyé par l'URL (JSON ou YAML attendu).");
+      }
+    }
+
+    // Resolve specific path if defined
+    const resolvedVal = getValueByPath(parsedData, pathStr);
+
+    // Format final choices to match optionsForm behavior
+    let choices = [];
+    if (resolvedVal !== undefined && resolvedVal !== null) {
+      if (Array.isArray(resolvedVal)) {
+        choices = resolvedVal.map(item => {
+          if (item !== null && typeof item === 'object') {
+            return {
+              value: item.value !== undefined ? item.value : (item.key !== undefined ? item.key : item.name),
+              label: item.label !== undefined ? item.label : (item.name !== undefined ? item.name : (item.value !== undefined ? item.value : item.key))
+            };
+          }
+          return item;
+        });
+      } else if (typeof resolvedVal === 'object') {
+        choices = Object.keys(resolvedVal);
+      } else {
+        choices = [String(resolvedVal)];
+      }
+    }
+
+    res.json({ success: true, choices });
+  } catch (error) {
+    console.error(`[optionsUrl] Failed to load options from ${url}:`, error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Mock endpoint for optionsUrl testing
+app.get('/api/mock-options', (req, res) => {
+  const authHeader = req.headers['authorization'];
+  res.json({
+    auth_received: authHeader || 'none',
+    project: {
+      all: {
+        networks: ["admin-net", "db-net", "web-net", "dmz-net"]
+      }
+    },
+    simple_list: ["dev", "staging", "prod"],
+    key_value_object: {
+      "zone-1a": "Europe West 1-A",
+      "zone-1b": "Europe West 1-B",
+      "zone-1c": "Europe West 1-C"
+    }
+  });
 });
 
 // Fallback to index.html for SPA

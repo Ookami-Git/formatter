@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
   elBtnRefresh.addEventListener('click', () => {
     if (confirm("Attention : Recharger le schéma va réinitialiser le formulaire et vous perdrez vos modifications actuelles. Voulez-vous continuer ?")) {
       branchesLoaded = false; // Reset branches cache on manual refresh
+      urlOptionsCache.clear(); // Clear url options cache on manual refresh
       loadConfig(true);
     }
   });
@@ -361,6 +362,34 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
     if (collapsedPaths.has(fieldPath)) {
       formGroup.classList.add('is-collapsed');
     }
+  }
+
+  if (field.optionsUrl && field.type !== 'array') {
+    const select = document.createElement('select');
+    select.className = 'form-control';
+    select.name = fieldPath;
+    select.required = !!field.required;
+    select.dataset.fieldBind = 'select';
+
+    if (!field.required) {
+      const emptyOption = document.createElement('option');
+      emptyOption.value = '';
+      emptyOption.textContent = '-- Non spécifié (optionnel) --';
+      select.appendChild(emptyOption);
+    }
+
+    const loadingOption = document.createElement('option');
+    loadingOption.value = '';
+    loadingOption.textContent = 'Chargement des options...';
+    select.appendChild(loadingOption);
+    select.disabled = true;
+
+    const finalVal = cachedVal !== undefined ? cachedVal : (field.default !== undefined ? field.default : '');
+    
+    loadOptionsFromUrl(field.optionsUrl, select, finalVal);
+
+    formGroup.appendChild(select);
+    return formGroup;
   }
 
   if (field.optionsFrom && field.type !== 'array') {
@@ -898,7 +927,8 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
             type: field.itemType || 'string',
             required: true,
             default: initialVal !== null ? initialVal : '',
-            optionsFrom: field.optionsFrom
+            optionsFrom: field.optionsFrom,
+            optionsUrl: field.optionsUrl
           };
           const primEl = createFieldElement(primitiveField, uniquePath);
           if (primEl) {
@@ -1879,6 +1909,128 @@ async function loadGitBranches(activeBranch) {
   } catch (error) {
     console.error('Error fetching branches/tags:', error);
   }
+}
+
+const urlOptionsCache = new Map();
+const URL_CACHE_TTL = 300000; // 5 minutes in milliseconds
+
+async function loadOptionsFromUrl(optionsUrlConfig, selectElement, selectValue) {
+  const config = typeof optionsUrlConfig === 'string'
+    ? { url: optionsUrlConfig }
+    : optionsUrlConfig;
+
+  const cacheKey = JSON.stringify(config);
+
+  // Check cache first (verify TTL)
+  if (urlOptionsCache.has(cacheKey)) {
+    const cachedEntry = urlOptionsCache.get(cacheKey);
+    if (Date.now() - cachedEntry.timestamp < URL_CACHE_TTL) {
+      populateSelectChoices(selectElement, cachedEntry.choices, selectValue);
+      return;
+    } else {
+      urlOptionsCache.delete(cacheKey);
+    }
+  }
+
+  // Check if there is an active fetch promise to avoid concurrent duplicates
+  const promiseKey = `promise_${cacheKey}`;
+  if (urlOptionsCache.has(promiseKey)) {
+    try {
+      const choices = await urlOptionsCache.get(promiseKey);
+      populateSelectChoices(selectElement, choices, selectValue);
+    } catch (err) {
+      showSelectError(selectElement, err.message);
+    }
+    return;
+  }
+
+  // Initiate fetch
+  const fetchPromise = (async () => {
+    const response = await fetch('/api/options-url', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(config)
+    });
+
+    if (!response.ok) {
+      const errRes = await response.json().catch(() => ({}));
+      throw new Error(errRes.error || `Erreur HTTP ${response.status}`);
+    }
+
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.error || 'Erreur lors du chargement des options');
+    }
+
+    return result.choices || [];
+  })();
+
+  urlOptionsCache.set(promiseKey, fetchPromise);
+
+  try {
+    const choices = await fetchPromise;
+    urlOptionsCache.set(cacheKey, {
+      timestamp: Date.now(),
+      choices: choices
+    });
+    urlOptionsCache.delete(promiseKey);
+    populateSelectChoices(selectElement, choices, selectValue);
+  } catch (err) {
+    urlOptionsCache.delete(promiseKey);
+    showSelectError(selectElement, err.message);
+  }
+}
+
+function populateSelectChoices(selectElement, choices, selectValue) {
+  selectElement.innerHTML = '';
+  selectElement.disabled = false;
+
+  const isRequired = selectElement.required;
+  if (!isRequired) {
+    const emptyOption = document.createElement('option');
+    emptyOption.value = '';
+    emptyOption.textContent = '-- Non spécifié (optionnel) --';
+    selectElement.appendChild(emptyOption);
+  }
+
+  let valuePreserved = false;
+  choices.forEach(choice => {
+    const opt = document.createElement('option');
+    if (choice !== null && typeof choice === 'object') {
+      opt.value = choice.value;
+      opt.textContent = choice.label || choice.value;
+    } else {
+      opt.value = choice;
+      opt.textContent = choice;
+    }
+
+    if (String(opt.value) === String(selectValue)) {
+      opt.selected = true;
+      valuePreserved = true;
+    }
+    selectElement.appendChild(opt);
+  });
+
+  if (valuePreserved) {
+    selectElement.value = selectValue;
+  } else {
+    selectElement.value = isRequired && choices.length > 0
+      ? (typeof choices[0] === 'object' ? choices[0].value : choices[0])
+      : '';
+  }
+
+  updateLiveOutput();
+}
+
+function showSelectError(selectElement, errorMessage) {
+  selectElement.innerHTML = '';
+  const errorOption = document.createElement('option');
+  errorOption.value = '';
+  errorOption.textContent = `Erreur : ${errorMessage}`;
+  selectElement.appendChild(errorOption);
+  selectElement.disabled = true;
 }
 
 // Returns true if any select value was changed programmatically (to signal
