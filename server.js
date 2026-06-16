@@ -26,6 +26,118 @@ const GIT_CONFIG_PATH = process.env.GIT_CONFIG_PATH || 'variables.tf';
 const URL_ADDRESS = process.env.URL_ADDRESS || '';
 const URL_IGNORE_SSL = process.env.URL_IGNORE_SSL === 'true';
 
+// Multi-configuration environment variables
+const CONFIGS_JSON = process.env.CONFIGS_JSON;
+const CONFIGS_FILE = process.env.CONFIGS_FILE;
+const CONFIGS_DIR = process.env.CONFIGS_DIR;
+
+function getConfigsList() {
+  let list = [];
+
+  // 1. Check CONFIGS_JSON
+  if (CONFIGS_JSON) {
+    try {
+      const parsed = JSON.parse(CONFIGS_JSON);
+      if (Array.isArray(parsed)) {
+        list = parsed;
+      } else if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.configs)) {
+          list = parsed.configs;
+        } else {
+          list = Object.entries(parsed).map(([id, conf]) => ({ id, ...conf }));
+        }
+      }
+    } catch (e) {
+      console.error('[MultiConfig] Failed to parse CONFIGS_JSON:', e.message);
+    }
+  }
+
+  // 2. Check CONFIGS_FILE
+  if (list.length === 0 && CONFIGS_FILE && fs.existsSync(CONFIGS_FILE)) {
+    try {
+      const fileContent = fs.readFileSync(CONFIGS_FILE, 'utf8');
+      let parsed;
+      if (CONFIGS_FILE.endsWith('.yaml') || CONFIGS_FILE.endsWith('.yml')) {
+        parsed = yaml.load(fileContent);
+      } else {
+        parsed = JSON.parse(fileContent);
+      }
+      if (Array.isArray(parsed)) {
+        list = parsed;
+      } else if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.configs)) {
+          list = parsed.configs;
+        } else {
+          list = Object.entries(parsed).map(([id, conf]) => ({ id, ...conf }));
+        }
+      }
+    } catch (e) {
+      console.error('[MultiConfig] Failed to parse CONFIGS_FILE:', e.message);
+    }
+  }
+
+  // 3. Check CONFIGS_DIR or directory fallback
+  let dirToScan = CONFIGS_DIR;
+  if (!list.length && !dirToScan && CONFIG_SOURCE === 'local' && CONFIG_PATH) {
+    try {
+      const stats = fs.statSync(CONFIG_PATH);
+      if (stats.isDirectory()) {
+        dirToScan = CONFIG_PATH;
+      }
+    } catch (e) {
+      // Ignore
+    }
+  }
+
+  if (!list.length && dirToScan && fs.existsSync(dirToScan)) {
+    try {
+      const files = fs.readdirSync(dirToScan);
+      const supportedExtensions = ['.yaml', '.yml', '.json', '.tf'];
+      for (const file of files) {
+        const ext = path.extname(file).toLowerCase();
+        if (supportedExtensions.includes(ext)) {
+          const id = path.basename(file, ext);
+          list.push({
+            id: id,
+            name: id.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+            sourceType: 'local',
+            localPath: path.join(dirToScan, file)
+          });
+        }
+      }
+    } catch (e) {
+      console.error('[MultiConfig] Failed to scan CONFIGS_DIR:', e.message);
+    }
+  }
+
+  // 4. Fallback to the single default config
+  if (list.length === 0) {
+    list.push({
+      id: 'default',
+      name: 'Configuration principale',
+      sourceType: CONFIG_SOURCE,
+      localPath: CONFIG_PATH,
+      gitRepoUrl: GIT_REPO_URL_RAW,
+      gitBranch: GIT_BRANCH,
+      gitToken: GIT_TOKEN,
+      gitConfigPath: GIT_CONFIG_PATH,
+      url: URL_ADDRESS,
+      urlIgnoreSsl: URL_IGNORE_SSL
+    });
+  }
+
+  // Ensure each item has a unique id and name
+  return list.map((item, index) => {
+    const id = item.id || `config-${index}`;
+    const name = item.name || id;
+    return {
+      ...item,
+      id,
+      name
+    };
+  });
+}
+
 // In-memory locks to serialize concurrent git syncs for the same repo+branch
 const activeSyncs = new Map();
 
@@ -294,11 +406,19 @@ app.use(express.json());
 // Serve static assets from public folder
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Initial Sync at startup if source is Git
-if (CONFIG_SOURCE === 'git' && GIT_REPO_URL_RAW) {
-  syncGitRepoDynamic(GIT_REPO_URL_RAW, GIT_BRANCH, GIT_TOKEN, true)
-    .then(() => console.log('[Startup] Initial Git sync successful.'))
-    .catch(err => console.warn(`[Startup Warning] Initial Git sync failed: ${err.message}`));
+// Initial Sync at startup for all Git configurations
+try {
+  const configs = getConfigsList();
+  configs.forEach(config => {
+    if (config.sourceType === 'git' && config.gitRepoUrl) {
+      const branch = config.gitBranch || 'main';
+      syncGitRepoDynamic(config.gitRepoUrl, branch, config.gitToken, true)
+        .then(() => console.log(`[Startup] Initial Git sync successful for config: ${config.id}`))
+        .catch(err => console.warn(`[Startup Warning] Initial Git sync failed for config ${config.id}: ${err.message}`));
+    }
+  });
+} catch (e) {
+  console.warn('[Startup Warning] Failed to run initial Git sync:', e.message);
 }
 
 // Liveness/Readiness Probe for Kubernetes
@@ -308,23 +428,33 @@ app.get('/healthz', (req, res) => {
 
 // Endpoint to retrieve list of branches and tags (for Git source only)
 app.get('/api/branches', async (req, res) => {
-  if (CONFIG_SOURCE !== 'git' || !GIT_REPO_URL_RAW) {
-    return res.status(400).json({ success: false, error: "La source de l'application n'est pas configurée en mode Git." });
+  const configId = req.query.config;
+  const configs = getConfigsList();
+  let selectedConfig = configs.find(c => c.id === configId);
+  if (!selectedConfig) {
+    selectedConfig = configs[0];
+  }
+
+  if (!selectedConfig || selectedConfig.sourceType !== 'git' || !selectedConfig.gitRepoUrl) {
+    return res.status(400).json({ success: false, error: "La source de la configuration n'est pas configurée en mode Git." });
   }
 
   try {
+    const repoUrl = selectedConfig.gitRepoUrl;
+    const token = selectedConfig.gitToken || '';
+    
     // Build authenticated repo URL
-    let authRepoUrl = GIT_REPO_URL_RAW;
-    if (GIT_TOKEN) {
-      const urlMatch = GIT_REPO_URL_RAW.match(/^https?:\/\/([^@]+@)?(.+)$/);
+    let authRepoUrl = repoUrl;
+    if (token) {
+      const urlMatch = repoUrl.match(/^https?:\/\/([^@]+@)?(.+)$/);
       if (!urlMatch || !urlMatch[1]) {
-        const isGitlab = GIT_REPO_URL_RAW.includes('gitlab');
-        const protocol = GIT_REPO_URL_RAW.startsWith('https') ? 'https' : 'http';
-        const hostAndPath = GIT_REPO_URL_RAW.replace(/^https?:\/\//, '');
+        const isGitlab = repoUrl.includes('gitlab');
+        const protocol = repoUrl.startsWith('https') ? 'https' : 'http';
+        const hostAndPath = repoUrl.replace(/^https?:\/\//, '');
         if (isGitlab) {
-          authRepoUrl = `${protocol}://oauth2:${GIT_TOKEN}@${hostAndPath}`;
+          authRepoUrl = `${protocol}://oauth2:${token}@${hostAndPath}`;
         } else {
-          authRepoUrl = `${protocol}://${GIT_TOKEN}@${hostAndPath}`;
+          authRepoUrl = `${protocol}://${token}@${hostAndPath}`;
         }
       }
     }
@@ -332,7 +462,7 @@ app.get('/api/branches', async (req, res) => {
     const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
     const gitProxyOpt = proxy ? `-c http.proxy="${proxy}"` : '';
 
-    console.log(`[Git] Listing remote branches and tags for ${maskGitUrl(GIT_REPO_URL_RAW)}...`);
+    console.log(`[Git] Listing remote branches and tags for ${maskGitUrl(repoUrl)}...`);
     const output = execSync(`git ${gitProxyOpt} ls-remote --heads --tags "${authRepoUrl}"`, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     
     const branches = [];
@@ -364,7 +494,7 @@ app.get('/api/branches', async (req, res) => {
   }
 });
 
-// Endpoint to load default schema (GET)
+// Endpoint to load schema (GET)
 app.get('/api/config', async (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
@@ -372,13 +502,37 @@ app.get('/api/config', async (req, res) => {
 
   const forceRefresh = req.query.refresh === 'true';
   const branchParam = req.query.branch;
+  const configId = req.query.config;
 
   try {
+    const configs = getConfigsList();
+    let selectedConfig = configs.find(c => c.id === configId);
+    if (!selectedConfig) {
+      if (configId) {
+        return res.status(404).json({ success: false, error: `Configuration '${configId}' non trouvée.` });
+      }
+      selectedConfig = configs[0];
+    }
+
+    if (!selectedConfig) {
+      throw new Error("Aucune configuration disponible.");
+    }
+
     const result = await loadSchemaData({
-      sourceType: 'default',
-      gitBranch: branchParam,
+      sourceType: selectedConfig.sourceType,
+      localPath: selectedConfig.localPath,
+      gitRepoUrl: selectedConfig.gitRepoUrl,
+      gitBranch: branchParam || selectedConfig.gitBranch,
+      gitToken: selectedConfig.gitToken,
+      gitConfigPath: selectedConfig.gitConfigPath,
+      url: selectedConfig.url,
+      urlIgnoreSsl: selectedConfig.urlIgnoreSsl,
       refresh: forceRefresh
     });
+
+    result.configId = selectedConfig.id;
+    result.configsList = configs.map(c => ({ id: c.id, name: c.name, description: c.description }));
+
     res.json(result);
   } catch (error) {
     console.error('Error loading configuration:', error);
@@ -529,13 +683,21 @@ app.listen(PORT, () => {
   console.log(`===================================================`);
   console.log(` Config Form Generator server started!`);
   console.log(` Port: ${PORT}`);
-  console.log(` Source Mode: ${CONFIG_SOURCE}`);
-  if (CONFIG_SOURCE === 'git') {
-    console.log(` Git Repo: ${maskGitUrl(GIT_REPO_URL_RAW)}`);
-    console.log(` Git Branch: ${GIT_BRANCH}`);
-    console.log(` Git Config Path: ${GIT_CONFIG_PATH}`);
-  } else {
-    console.log(` Config Path: ${CONFIG_PATH}`);
+  try {
+    const configs = getConfigsList();
+    console.log(` Loaded ${configs.length} configuration(s):`);
+    configs.forEach(config => {
+      console.log(`  - [${config.id}] ${config.name} (${config.sourceType})`);
+      if (config.sourceType === 'git') {
+        console.log(`    Repo: ${maskGitUrl(config.gitRepoUrl)} (branch: ${config.gitBranch || 'main'})`);
+      } else if (config.sourceType === 'url') {
+        console.log(`    URL: ${config.url}`);
+      } else {
+        console.log(`    Path: ${config.localPath}`);
+      }
+    });
+  } catch (e) {
+    console.log(` Error listing configurations: ${e.message}`);
   }
   console.log(`===================================================`);
 });

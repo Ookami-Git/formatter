@@ -58,7 +58,12 @@ spec:
               value: "/app/examples/schema.yaml"
             {{- else if or (eq .Values.config.source "inline") (eq .Values.config.source "configmap") (eq .Values.config.source "secret") }}
             - name: CONFIG_PATH
-              value: "/app/config/schema.yaml"
+              value: {{ .Values.config.path | default "/app/config/schema.yaml" | quote }}
+            {{- end }}
+
+            {{- if .Values.config.configs }}
+            - name: CONFIGS_JSON
+              value: {{ toJson .Values.config.configs | quote }}
             {{- end }}
 
             {{- /* ── Mode url ─────────────────────────────────────────────────────── */}}

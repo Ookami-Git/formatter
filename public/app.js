@@ -32,6 +32,10 @@ let importModeActive = false;
 const elBranchSelectorContainer = document.getElementById('branch-selector-container');
 const elSelectGitBranch = document.getElementById('select-git-branch');
 
+// Config selector elements
+const elConfigSelectorContainer = document.getElementById('config-selector-container');
+const elSelectConfig = document.getElementById('select-config');
+
 // Format Buttons
 const elFormatYaml = document.getElementById('format-yaml');
 const elFormatJson = document.getElementById('format-json');
@@ -62,9 +66,36 @@ document.addEventListener('DOMContentLoaded', () => {
   elSelectGitBranch.addEventListener('change', () => {
     const selectedBranch = elSelectGitBranch.value;
     if (selectedBranch) {
-      localStorage.setItem('active_git_branch', selectedBranch);
+      const urlParams = new URLSearchParams(window.location.search);
+      const currentConfigId = urlParams.get('config') || '';
+      const branchKey = currentConfigId ? `active_git_branch_${currentConfigId}` : 'active_git_branch';
+      localStorage.setItem(branchKey, selectedBranch);
       loadConfig(true);
     }
+  });
+
+  // Config selector
+  if (elSelectConfig) {
+    elSelectConfig.addEventListener('change', () => {
+      const selectedConfigId = elSelectConfig.value;
+      if (selectedConfigId) {
+        const urlParams = new URLSearchParams(window.location.search);
+        urlParams.set('config', selectedConfigId);
+        const newUrl = `${window.location.pathname}?${urlParams.toString()}`;
+        window.history.pushState({ path: newUrl }, '', newUrl);
+
+        branchesLoaded = false;
+        urlOptionsCache.clear();
+        loadConfig(false);
+      }
+    });
+  }
+
+  // Handle back/forward navigation
+  window.addEventListener('popstate', () => {
+    branchesLoaded = false;
+    urlOptionsCache.clear();
+    loadConfig(false);
   });
 
 
@@ -79,10 +110,16 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadConfig(forceRefresh = false) {
   setLoadingState(true);
   try {
-    const savedBranch = localStorage.getItem('active_git_branch');
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentConfigId = urlParams.get('config') || '';
+
+    const branchKey = currentConfigId ? `active_git_branch_${currentConfigId}` : 'active_git_branch';
+    const savedBranch = localStorage.getItem(branchKey) || localStorage.getItem('active_git_branch');
+
     let url = '/api/config?';
     if (forceRefresh) url += 'refresh=true&';
     if (savedBranch) url += `branch=${encodeURIComponent(savedBranch)}&`;
+    if (currentConfigId) url += `config=${encodeURIComponent(currentConfigId)}&`;
 
     const response = await fetch(url);
 
@@ -101,6 +138,9 @@ async function loadConfig(forceRefresh = false) {
       source: result.source,
       sourceType: result.sourceType
     };
+
+    // Render the configuration selector
+    renderConfigSelector(result.configsList, result.configId);
 
     if (result.sourceType === 'git') {
       elBranchSelectorContainer.style.display = 'flex';
@@ -1993,7 +2033,14 @@ async function loadGitBranches(activeBranch) {
   }
 
   try {
-    const response = await fetch('/api/branches');
+    const urlParams = new URLSearchParams(window.location.search);
+    const currentConfigId = urlParams.get('config') || '';
+    let url = '/api/branches';
+    if (currentConfigId) {
+      url += `?config=${encodeURIComponent(currentConfigId)}`;
+    }
+
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error('Impossible de charger les branches/tags');
     }
@@ -2042,12 +2089,35 @@ async function loadGitBranches(activeBranch) {
 
       if (branchToSelect) {
         elSelectGitBranch.value = branchToSelect;
-        localStorage.setItem('active_git_branch', branchToSelect);
+        const branchKey = currentConfigId ? `active_git_branch_${currentConfigId}` : 'active_git_branch';
+        localStorage.setItem(branchKey, branchToSelect);
       }
       branchesLoaded = true;
     }
   } catch (error) {
     console.error('Error fetching branches/tags:', error);
+  }
+}
+
+function renderConfigSelector(configsList, activeConfigId) {
+  if (!elConfigSelectorContainer || !elSelectConfig) return;
+
+  if (configsList && configsList.length > 1) {
+    elConfigSelectorContainer.style.display = 'flex';
+    elSelectConfig.innerHTML = '';
+    
+    configsList.forEach(config => {
+      const option = document.createElement('option');
+      option.value = config.id;
+      option.textContent = config.name;
+      option.title = config.description || '';
+      if (config.id === activeConfigId) {
+        option.selected = true;
+      }
+      elSelectConfig.appendChild(option);
+    });
+  } else {
+    elConfigSelectorContainer.style.display = 'none';
   }
 }
 

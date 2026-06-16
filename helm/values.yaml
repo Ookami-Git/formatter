@@ -46,6 +46,23 @@ config:
   # -- Port d'écoute du serveur
   port: 3000
 
+  # -- Tableau de configurations pour le mode Multi-Config (injecté via CONFIGS_JSON)
+  configs: []
+  # Exemple:
+  # configs:
+  #   - id: frontend
+  #     name: "Frontend Schema"
+  #     sourceType: local
+  #     localPath: "/app/config/frontend.yaml"
+  #   - id: backend
+  #     name: "Backend Schema"
+  #     sourceType: url
+  #     url: "https://example.com/backend.yaml"
+
+  # -- Chemin alternatif du fichier ou dossier de configuration (mode local/configmap/secret)
+  #    Par défaut, s'il n'est pas défini, utilise "/app/config/schema.yaml"
+  path: ""
+
   # ── Mode : inline ────────────────────────────────────────────────────────────
   # Contenu du schéma YAML injecté dans un ConfigMap créé par le chart.
   # (utilisé uniquement si source: inline)
