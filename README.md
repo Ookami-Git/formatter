@@ -86,6 +86,9 @@ npm start
 | `URL_IGNORE_SSL` | Ignorer la vérification SSL (`true`/`false`) | `false` | Non |
 | `HTTP_PROXY` | URL du proxy HTTP à utiliser pour le clonage Git et les requêtes sortantes | — | Non |
 | `HTTPS_PROXY` | URL du proxy HTTPS à utiliser pour le clonage Git et les requêtes sortantes | — | Non |
+| `CONFIGS_JSON` | Liste des configurations au format JSON (mode multi-config) | — | Non |
+| `CONFIGS_FILE` | Chemin vers un fichier JSON/YAML listant les configurations | — | Non |
+| `CONFIGS_DIR` | Chemin vers un dossier à scanner pour enregistrer automatiquement tous les schémas présents | — | Non |
 
 ### 🔐 Authentification Git (repos privés)
 
@@ -116,6 +119,72 @@ config:
 ```
 
 > **Note :** L'injection est automatique — GitHub reçoit `https://TOKEN@github.com/...`, GitLab reçoit `https://oauth2:TOKEN@gitlab.com/...`. Le token est masqué dans les logs serveur.
+
+---
+
+## 🗂️ Mode Multi-Configurations
+
+Il est possible de faire tourner l'application avec plusieurs fichiers de configuration indépendants. L'utilisateur peut basculer de l'un à l'autre via un menu déroulant dans l'interface ou y accéder directement via un paramètre dans l'URL.
+
+Trois approches sont possibles pour configurer le mode Multi-Configurations :
+
+### Option 1 : Définir la liste via une variable d'environnement JSON (`CONFIGS_JSON`)
+Cette méthode est idéale pour Docker ou Helm car elle ne nécessite aucun fichier supplémentaire.
+
+```bash
+docker run -d -p 3000:3000 \
+  -e CONFIGS_JSON='[{"id":"frontend","name":"Frontend","sourceType":"local","localPath":"/app/examples/schema.yaml"},{"id":"backend","name":"Backend (Git)","sourceType":"git","gitRepoUrl":"https://github.com/my-org/backend-repo.git","gitBranch":"main","gitConfigPath":"variables.tf"}]' \
+  ghcr.io/ookami-git/formatter:latest
+```
+
+### Option 2 : Scanner un répertoire contenant plusieurs schémas (`CONFIGS_DIR` ou `CONFIG_PATH`)
+Si vous montez un dossier contenant plusieurs fichiers de schéma (`.yaml`, `.yml`, `.json`, `.tf`), le serveur va automatiquement les détecter et les enregistrer comme configurations séparées.
+
+Dans cette configuration, l'ID et le nom de chaque configuration sont automatiquement dérivés du nom de fichier.
+
+**Avec Docker :**
+```bash
+docker run -d -p 3000:3000 \
+  -v $(pwd)/mes-schemas:/app/mes-schemas \
+  -e CONFIGS_DIR=/app/mes-schemas \
+  ghcr.io/ookami-git/formatter:latest
+```
+
+**Avec Kubernetes (Helm) :**
+Vous pouvez monter un ConfigMap contenant plusieurs fichiers dans `/app/config` et configurer le paramètre `config.path` à `/app/config` (qui est un dossier). Le serveur traitera automatiquement ce dossier comme source multi-configs.
+
+### Option 3 : Utiliser un fichier d'index de configurations (`CONFIGS_FILE`)
+Vous pouvez spécifier un fichier YAML ou JSON listant toutes vos configurations disponibles.
+
+Fichier `/app/mes-configs.yaml` :
+```yaml
+configs:
+  - id: app-infra
+    name: "Infrastructure Cloud"
+    sourceType: local
+    localPath: "/app/examples/schema.yaml"
+  - id: app-k8s
+    name: "Déploiement Kubernetes"
+    sourceType: url
+    url: "https://raw.githubusercontent.com/org/repo/main/k8s-schema.yaml"
+```
+
+Lancement :
+```bash
+docker run -d -p 3000:3000 \
+  -v $(pwd)/mes-configs.yaml:/app/mes-configs.yaml \
+  -e CONFIGS_FILE=/app/mes-configs.yaml \
+  ghcr.io/ookami-git/formatter:latest
+```
+
+---
+
+### 🔗 Liens directs via URL
+Une fois configuré, vous pouvez charger directement une configuration cible en ajoutant le paramètre de requête `config` dans l'URL :
+- `http://localhost:3000/?config=app-infra`
+- `http://localhost:3000/?config=app-k8s`
+
+Le basculement dans l'interface met à jour l'URL dynamiquement sans rechargement de page, préservant une expérience Single Page Application (SPA).
 
 ---
 
