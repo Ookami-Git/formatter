@@ -502,7 +502,12 @@ app.get('/api/mock-options', (req, res) => {
     auth_received: authHeader || 'none',
     project: {
       all: {
-        networks: ["admin-net", "db-net", "web-net", "dmz-net"]
+        networks: [
+          "admin-net", "db-net", "web-net", "dmz-net",
+          "monitoring-net", "backup-net", "vpn-net", "bi-net",
+          "test-net", "staging-net", "prod-net", "security-net",
+          "shared-net", "internal-net", "external-net"
+        ]
       }
     },
     simple_list: ["dev", "staging", "prod"],

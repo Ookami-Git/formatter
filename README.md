@@ -195,6 +195,52 @@ fields:
     optionsFrom: /subnets
 ```
 
+### Récupération dynamique d'options depuis une URL (`optionsUrl`)
+
+Permet de charger dynamiquement la liste d'options depuis une URL HTTP(S) externe (effectué via une requête GET).
+L'application intègre un bouton de rafraîchissement forcé (icône tournante) à côté du champ pour court-circuiter le cache client (qui a une durée de vie par défaut de 5 minutes).
+
+```yaml
+fields:
+  - name: subnets_from_url
+    label: "Sélection de sous-réseau"
+    type: select
+    optionsUrl:
+      url: "https://api.mon-infra.com/subnets"
+      ignoreSsl: true              # Optionnel, contourne la vérification SSL
+      path: "project.all.subnets"  # Optionnel, notation pointée pour cibler un tableau sous un objet complexe
+      auth:                        # Optionnel, Basic ou Bearer auth
+        # Exemple avec Bearer Auth :
+        type: "bearer"
+        token: "mon-token-statique"
+        # Pour une sécurité accrue orientée Kubernetes (Secret/EnvVar) :
+        # tokenEnv: "MON_TOKEN_ENV_VAR"
+        # tokenFile: "/secrets/mon-token/token"
+
+        # OU Exemple avec Basic Auth :
+        # type: "basic"
+        # username: "mon-utilisateur"
+        # password: "mon-mot-de-passe-statique"
+        # Pour une sécurité accrue orientée Kubernetes (Secret/EnvVar) :
+        # passwordEnv: "MON_PASSWORD_ENV_VAR"
+        # passwordFile: "/secrets/mon-password/password"
+```
+
+### Sélection multiple avec cases à cocher (Checklists)
+
+Si la variable de destination du formulaire (le champ qui porte `optionsFrom` ou `optionsUrl`) est déclarée avec le type `array` (au lieu de `select` ou `string`), l'application génère automatiquement une **checklist** sous forme de cases à cocher multiples.
+- **Support des longues listes** : Les éléments sont présentés dans un bloc de hauteur maximale (`200px`) avec défilement vertical pour préserver la lisibilité de la page.
+- **Barre de recherche intégrée** : Un champ de texte permet de filtrer en temps réel les choix par mot-clé (insensible à la casse).
+
+```yaml
+fields:
+  - name: subnets
+    label: "Sous-réseaux"
+    type: array
+    itemType: string
+    optionsUrl: "https://api.mon-infra.com/subnets" # Rendu en checklist avec recherche
+```
+
 ### Multi-documents YAML (onglets)
 
 ```yaml
@@ -241,8 +287,10 @@ variable "tags" {
 - `@optionsFrom(<target> = <source>)` permet de lier un champ de type `select` à des valeurs provenant d'une autre propriété du schéma.
   - `<source>` peut être un chemin absolu commençant par `/` ou un chemin relatif avec `..`.
   - `<target>` peut cibler un sous-champ au sein d'un objet complexe.
+- `@optionsUrl(<target> = <source_url_or_json>)` permet de charger dynamiquement des options depuis une URL HTTP(S) externe.
+  - `<source_url_or_json>` peut être une simple URL ou un objet JSON complet (avec paramètres `auth`, `ignoreSsl`, `path`).
 
-> Pour les schémas YAML/JSON, utilisez directement la propriété `optionsFrom` au niveau du champ.
+> Pour les schémas YAML/JSON, utilisez directement la propriété `optionsFrom` ou `optionsUrl` au niveau du champ.
 
 Exemples :
 
@@ -251,6 +299,22 @@ variable "subnet_name" {
   description = "Nom du subnet. @optionsFrom(subnet_name = /subnets)"
   type        = string
 }
+
+# Exemple simple d'optionsUrl avec une chaîne de caractères (URL directe en simple quotes) :
+variable "app_environment" {
+  type        = string
+  description = "Environnement cible. @optionsUrl(app_environment = 'https://api.mon-infra.com/environments')"
+}
+
+# Exemple complexe avec objet JSON (utilisation recommandée des simples quotes pour éviter d'échapper les guillemets) :
+variable "target_network" {
+  type        = string
+  description = "Réseau cible. @optionsUrl(target_network = {'url': 'https://api.mon-infra.com/networks', 'path': 'project.all.networks', 'ignoreSsl': true, 'auth': {'type': 'basic', 'username': 'admin', 'passwordEnv': 'MY_NETWORKS_PASSWORD'}})"
+}
+
+# (Optionnel) Il reste possible d'utiliser des guillemets doubles en les échappant :
+# description = "Réseau cible. @optionsUrl(target_network = {\"url\": \"https://api.mon-infra.com/networks\"})"
+
 
 variable "internal_token" {
   description = "Champ interne ignoré par le générateur. @ignore"

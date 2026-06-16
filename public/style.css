@@ -1026,6 +1026,7 @@ code[class*="language-"] {
 /* Hide content when collapsed */
 .form-group.is-collapsed > .nested-object-card,
 .form-group.is-collapsed > .array-container,
+.form-group.is-collapsed > .checklist-container,
 .form-group.is-collapsed > .form-desc {
   display: none !important;
 }

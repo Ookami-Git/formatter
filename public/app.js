@@ -365,11 +365,17 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
   }
 
   if (field.optionsUrl && field.type !== 'array') {
+    const selectWrapper = document.createElement('div');
+    selectWrapper.style.display = 'flex';
+    selectWrapper.style.gap = '8px';
+    selectWrapper.style.width = '100%';
+
     const select = document.createElement('select');
     select.className = 'form-control';
     select.name = fieldPath;
     select.required = !!field.required;
     select.dataset.fieldBind = 'select';
+    select.style.flex = '1';
 
     if (!field.required) {
       const emptyOption = document.createElement('option');
@@ -388,7 +394,31 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
     
     loadOptionsFromUrl(field.optionsUrl, select, finalVal);
 
-    formGroup.appendChild(select);
+    selectWrapper.appendChild(select);
+
+    const refreshBtn = document.createElement('button');
+    refreshBtn.type = 'button';
+    refreshBtn.className = 'btn btn-secondary';
+    refreshBtn.style.padding = '0 12px';
+    refreshBtn.title = 'Forcer le rafraîchissement';
+    refreshBtn.innerHTML = `
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+        <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+      </svg>
+    `;
+    refreshBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      select.innerHTML = '';
+      const loadingOpt = document.createElement('option');
+      loadingOpt.value = '';
+      loadingOpt.textContent = 'Chargement des options...';
+      select.appendChild(loadingOpt);
+      select.disabled = true;
+      loadOptionsFromUrl(field.optionsUrl, select, select.value, true);
+    });
+    selectWrapper.appendChild(refreshBtn);
+
+    formGroup.appendChild(selectWrapper);
     return formGroup;
   }
 
@@ -762,6 +792,87 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
       break;
 
     case 'array':
+      const hasChoices = field.options || field.optionsFrom || field.optionsUrl;
+      if (hasChoices) {
+        const checklistContainer = document.createElement('div');
+        checklistContainer.className = 'checklist-container';
+        checklistContainer.dataset.fieldBind = 'checklist';
+        checklistContainer.setAttribute('name', fieldPath);
+
+        const searchWrapper = document.createElement('div');
+        searchWrapper.style.display = 'flex';
+        searchWrapper.style.gap = '8px';
+        searchWrapper.style.marginBottom = '8px';
+
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.className = 'form-control checklist-search';
+        searchInput.placeholder = 'Rechercher...';
+        searchInput.style.flex = '1';
+        searchInput.style.marginBottom = '0';
+        searchWrapper.appendChild(searchInput);
+
+        const itemsWrapper = document.createElement('div');
+        itemsWrapper.className = 'checklist-items-wrapper';
+        itemsWrapper.style.maxHeight = '200px';
+        itemsWrapper.style.overflowY = 'auto';
+        itemsWrapper.style.border = '1px solid var(--color-border)';
+        itemsWrapper.style.borderRadius = '4px';
+        itemsWrapper.style.padding = '8px';
+        itemsWrapper.style.backgroundColor = 'var(--color-bg-input)';
+
+        if (field.optionsUrl) {
+          const refreshBtn = document.createElement('button');
+          refreshBtn.type = 'button';
+          refreshBtn.className = 'btn btn-secondary';
+          refreshBtn.style.padding = '0 12px';
+          refreshBtn.title = 'Forcer le rafraîchissement';
+          refreshBtn.innerHTML = `
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 16px; height: 16px;">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+            </svg>
+          `;
+          refreshBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const checkedBoxes = itemsWrapper.querySelectorAll('input[type="checkbox"]:checked');
+            const currentVal = Array.from(checkedBoxes).map(cb => cb.value);
+            itemsWrapper.innerHTML = '<div class="loading-text" style="color: var(--color-text-muted); font-size: 14px;">Chargement des options...</div>';
+            loadOptionsFromUrl(field.optionsUrl, checklistContainer, currentVal, true);
+          });
+          searchWrapper.appendChild(refreshBtn);
+        }
+
+        checklistContainer.appendChild(searchWrapper);
+        checklistContainer.appendChild(itemsWrapper);
+
+        searchInput.addEventListener('input', () => {
+          const query = searchInput.value.toLowerCase().trim();
+          const labels = itemsWrapper.querySelectorAll('label');
+          labels.forEach(label => {
+            const text = label.textContent.toLowerCase();
+            if (text.includes(query)) {
+              label.style.display = 'flex';
+            } else {
+              label.style.display = 'none';
+            }
+          });
+        });
+
+        const finalVal = cachedVal !== undefined ? cachedVal : (field.default !== undefined ? field.default : []);
+
+        if (field.optionsUrl) {
+          itemsWrapper.innerHTML = '<div class="loading-text" style="color: var(--color-text-muted); font-size: 14px;">Chargement des options...</div>';
+          loadOptionsFromUrl(field.optionsUrl, checklistContainer, finalVal);
+        } else if (field.optionsFrom) {
+          checklistContainer.dataset.optionsFrom = field.optionsFrom;
+        } else if (field.options) {
+          populateChecklistChoices(checklistContainer, field.options, finalVal);
+        }
+
+        formGroup.appendChild(checklistContainer);
+        break;
+      }
+
       // Array elements container
       const arrayContainer = document.createElement('div');
       arrayContainer.className = 'array-container';
@@ -1163,6 +1274,22 @@ function extractFieldValue(formGroup, field) {
       return objData;
 
     case 'array':
+      const checklistContainer = formGroup.querySelector(':scope > [data-field-bind="checklist"]');
+      if (checklistContainer) {
+        const checkedBoxes = checklistContainer.querySelectorAll('input[type="checkbox"]:checked');
+        return Array.from(checkedBoxes).map(cb => {
+          const val = cb.value;
+          if (field.itemType === 'integer') {
+            return parseInt(val, 10);
+          } else if (field.itemType === 'number') {
+            return parseFloat(val);
+          } else if (field.itemType === 'boolean') {
+            return val === 'true';
+          }
+          return val;
+        });
+      }
+
       const itemsList = formGroup.querySelector(':scope > .array-container > [data-array-items-list="true"]');
       if (!itemsList) return [];
 
@@ -1699,6 +1826,19 @@ function populateFieldElement(formGroup, field, value) {
       break;
 
     case 'array': {
+      const checklistContainer = formGroup.querySelector(':scope > [data-field-bind="checklist"]');
+      if (checklistContainer) {
+        const itemsWrapper = checklistContainer.querySelector('.checklist-items-wrapper');
+        if (itemsWrapper) {
+          const valuesArray = Array.isArray(value) ? value.map(String) : [String(value)].filter(Boolean);
+          const checkboxes = itemsWrapper.querySelectorAll('input[type="checkbox"]');
+          checkboxes.forEach(cb => {
+            cb.checked = valuesArray.includes(String(cb.value));
+          });
+        }
+        break;
+      }
+
       const arrayContainer = formGroup.querySelector(':scope > .array-container');
       const itemsList = arrayContainer ? arrayContainer.querySelector(':scope > [data-array-items-list="true"]') : null;
       const addButton = arrayContainer ? arrayContainer.querySelector(':scope > button') : null;
@@ -1914,18 +2054,28 @@ async function loadGitBranches(activeBranch) {
 const urlOptionsCache = new Map();
 const URL_CACHE_TTL = 300000; // 5 minutes in milliseconds
 
-async function loadOptionsFromUrl(optionsUrlConfig, selectElement, selectValue) {
+async function loadOptionsFromUrl(optionsUrlConfig, selectOrContainer, selectValue, forceRefresh = false) {
   const config = typeof optionsUrlConfig === 'string'
     ? { url: optionsUrlConfig }
     : optionsUrlConfig;
 
   const cacheKey = JSON.stringify(config);
+  const promiseKey = `promise_${cacheKey}`;
+
+  if (forceRefresh) {
+    urlOptionsCache.delete(cacheKey);
+    urlOptionsCache.delete(promiseKey);
+  }
 
   // Check cache first (verify TTL)
   if (urlOptionsCache.has(cacheKey)) {
     const cachedEntry = urlOptionsCache.get(cacheKey);
     if (Date.now() - cachedEntry.timestamp < URL_CACHE_TTL) {
-      populateSelectChoices(selectElement, cachedEntry.choices, selectValue);
+      if (selectOrContainer.tagName === 'SELECT') {
+        populateSelectChoices(selectOrContainer, cachedEntry.choices, selectValue);
+      } else {
+        populateChecklistChoices(selectOrContainer, cachedEntry.choices, selectValue);
+      }
       return;
     } else {
       urlOptionsCache.delete(cacheKey);
@@ -1933,13 +2083,16 @@ async function loadOptionsFromUrl(optionsUrlConfig, selectElement, selectValue) 
   }
 
   // Check if there is an active fetch promise to avoid concurrent duplicates
-  const promiseKey = `promise_${cacheKey}`;
   if (urlOptionsCache.has(promiseKey)) {
     try {
       const choices = await urlOptionsCache.get(promiseKey);
-      populateSelectChoices(selectElement, choices, selectValue);
+      if (selectOrContainer.tagName === 'SELECT') {
+        populateSelectChoices(selectOrContainer, choices, selectValue);
+      } else {
+        populateChecklistChoices(selectOrContainer, choices, selectValue);
+      }
     } catch (err) {
-      showSelectError(selectElement, err.message);
+      showSelectError(selectOrContainer, err.message);
     }
     return;
   }
@@ -1976,10 +2129,14 @@ async function loadOptionsFromUrl(optionsUrlConfig, selectElement, selectValue) 
       choices: choices
     });
     urlOptionsCache.delete(promiseKey);
-    populateSelectChoices(selectElement, choices, selectValue);
+    if (selectOrContainer.tagName === 'SELECT') {
+      populateSelectChoices(selectOrContainer, choices, selectValue);
+    } else {
+      populateChecklistChoices(selectOrContainer, choices, selectValue);
+    }
   } catch (err) {
     urlOptionsCache.delete(promiseKey);
-    showSelectError(selectElement, err.message);
+    showSelectError(selectOrContainer, err.message);
   }
 }
 
@@ -2024,30 +2181,109 @@ function populateSelectChoices(selectElement, choices, selectValue) {
   updateLiveOutput();
 }
 
-function showSelectError(selectElement, errorMessage) {
-  selectElement.innerHTML = '';
-  const errorOption = document.createElement('option');
-  errorOption.value = '';
-  errorOption.textContent = `Erreur : ${errorMessage}`;
-  selectElement.appendChild(errorOption);
-  selectElement.disabled = true;
+function populateChecklistChoices(checklistContainer, choices, selectedValues) {
+  const itemsWrapper = checklistContainer.querySelector('.checklist-items-wrapper');
+  if (!itemsWrapper) return;
+
+  itemsWrapper.innerHTML = '';
+
+  const valuesArray = Array.isArray(selectedValues) 
+    ? selectedValues.map(String) 
+    : [String(selectedValues)].filter(Boolean);
+
+  if (!choices || choices.length === 0) {
+    itemsWrapper.innerHTML = '<div style="color: var(--color-text-muted); font-size: 14px;">Aucune option disponible</div>';
+    return;
+  }
+
+  choices.forEach(choice => {
+    let val = choice;
+    let labelText = choice;
+
+    if (choice !== null && typeof choice === 'object') {
+      val = choice.value;
+      labelText = choice.label || choice.value;
+    }
+
+    const label = document.createElement('label');
+    label.style.display = 'flex';
+    label.style.alignItems = 'center';
+    label.style.gap = '8px';
+    label.style.marginBottom = '6px';
+    label.style.cursor = 'pointer';
+    label.style.fontWeight = 'normal';
+    label.style.userSelect = 'none';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = val;
+    checkbox.style.cursor = 'pointer';
+    
+    if (valuesArray.includes(String(val))) {
+      checkbox.checked = true;
+    }
+
+    checkbox.addEventListener('change', updateLiveOutput);
+
+    const span = document.createElement('span');
+    span.textContent = labelText;
+
+    label.appendChild(checkbox);
+    label.appendChild(span);
+    itemsWrapper.appendChild(label);
+  });
+
+  const searchInput = checklistContainer.querySelector('.checklist-search');
+  if (searchInput && searchInput.value) {
+    const query = searchInput.value.toLowerCase().trim();
+    const labels = itemsWrapper.querySelectorAll('label');
+    labels.forEach(label => {
+      const text = label.textContent.toLowerCase();
+      if (text.includes(query)) {
+        label.style.display = 'flex';
+      } else {
+        label.style.display = 'none';
+      }
+    });
+  }
 }
 
-// Returns true if any select value was changed programmatically (to signal
-// that formData must be re-extracted before rendering the output).
+function showSelectError(selectOrContainer, errorMessage) {
+  if (selectOrContainer.tagName === 'SELECT') {
+    selectOrContainer.innerHTML = '';
+    const errorOption = document.createElement('option');
+    errorOption.value = '';
+    errorOption.textContent = `Erreur : ${errorMessage}`;
+    selectOrContainer.appendChild(errorOption);
+    selectOrContainer.disabled = true;
+  } else {
+    const itemsWrapper = selectOrContainer.querySelector('.checklist-items-wrapper');
+    if (itemsWrapper) {
+      itemsWrapper.innerHTML = `<div style="color: var(--color-danger); font-size: 14px;">Erreur : ${errorMessage}</div>`;
+    }
+  }
+}
+
 function updateDynamicDropdowns(formData) {
-  const selects = elFormFieldsContainer.querySelectorAll('select[data-options-from]');
+  const containers = elFormFieldsContainer.querySelectorAll('select[data-options-from], div[data-options-from][data-field-bind="checklist"]');
   let selectChanged = false;
-  selects.forEach(select => {
-    const optionsFrom = select.dataset.optionsFrom;
-    const fieldPath = select.name;
-    const currentValue = select.value; // Save value BEFORE rebuilding options
+  
+  containers.forEach(container => {
+    const optionsFrom = container.dataset.optionsFrom;
+    const fieldPath = container.name || container.getAttribute('name');
+    const isChecklist = container.dataset.fieldBind === 'checklist';
+
+    let currentValue;
+    if (isChecklist) {
+      const checkedBoxes = container.querySelectorAll('input[type="checkbox"]:checked');
+      currentValue = Array.from(checkedBoxes).map(cb => cb.value);
+    } else {
+      currentValue = container.value;
+    }
 
     // 1. Resolve Path
-    // Parse name path segments, e.g. "vms.su6-rie-wk-3.vgs.vg02.disks[0].value" -> ['vms', 'su6-rie-wk-3', 'vgs', 'vg02', 'disks', '0', 'value']
     const rawSegments = fieldPath.split(/\.|\[|\]/).filter(Boolean);
 
-    // Filter out array indices and primitive wrapper keys ('value') from the end
     while (rawSegments.length > 0) {
       const last = rawSegments[rawSegments.length - 1];
       if (!isNaN(Number(last)) || last === 'value') {
@@ -2056,17 +2292,14 @@ function updateDynamicDropdowns(formData) {
         break;
       }
     }
-    // Pop the field name itself to get the parent container path
     if (rawSegments.length > 0) {
       rawSegments.pop();
     }
 
     let resolvedPath = [];
     if (optionsFrom.startsWith('/')) {
-      // Absolute path
       resolvedPath = optionsFrom.split('/').filter(Boolean);
     } else {
-      // Relative path
       resolvedPath = [...rawSegments];
       const relSegments = optionsFrom.split('/');
       relSegments.forEach(seg => {
@@ -2101,34 +2334,42 @@ function updateDynamicDropdowns(formData) {
       }
     }
 
-    // 4. Update dropdown options
-    select.innerHTML = '';
-    const isRequired = select.required;
-    if (!isRequired) {
-      const emptyOption = document.createElement('option');
-      emptyOption.value = '';
-      emptyOption.textContent = '-- Non spécifié (optionnel) --';
-      select.appendChild(emptyOption);
-    }
-
-    let valuePreserved = false;
-    choices.forEach(choice => {
-      const opt = document.createElement('option');
-      opt.value = choice;
-      opt.textContent = choice;
-      if (choice === currentValue) {
-        opt.selected = true;
-        valuePreserved = true;
+    // 4. Update container options
+    if (isChecklist) {
+      populateChecklistChoices(container, choices, currentValue);
+      const newCheckedBoxes = container.querySelectorAll('input[type="checkbox"]:checked');
+      const newValue = Array.from(newCheckedBoxes).map(cb => cb.value);
+      if (JSON.stringify(newValue) !== JSON.stringify(currentValue)) {
+        selectChanged = true;
       }
-      select.appendChild(opt);
-    });
+    } else {
+      container.innerHTML = '';
+      const isRequired = container.required;
+      if (!isRequired) {
+        const emptyOption = document.createElement('option');
+        emptyOption.value = '';
+        emptyOption.textContent = '-- Non spécifié (optionnel) --';
+        container.appendChild(emptyOption);
+      }
 
-    const newValue = valuePreserved ? currentValue : (isRequired && choices.length > 0 ? choices[0] : '');
-    select.value = newValue;
+      let valuePreserved = false;
+      choices.forEach(choice => {
+        const opt = document.createElement('option');
+        opt.value = choice;
+        opt.textContent = choice;
+        if (choice === currentValue) {
+          opt.selected = true;
+          valuePreserved = true;
+        }
+        container.appendChild(opt);
+      });
 
-    // Detect whether the select value changed programmatically
-    if (select.value !== currentValue) {
-      selectChanged = true;
+      const newValue = valuePreserved ? currentValue : (isRequired && choices.length > 0 ? choices[0] : '');
+      container.value = newValue;
+
+      if (container.value !== currentValue) {
+        selectChanged = true;
+      }
     }
   });
   return selectChanged;
@@ -2318,7 +2559,20 @@ function updateCollapsePreviews() {
         }
       } else if (type === 'array') {
         const arrayContainer = formGroup.querySelector(':scope > .array-container');
-        summaryText = summarizeArrayContainer(arrayContainer);
+        const checklistContainer = formGroup.querySelector(':scope > .checklist-container');
+        if (checklistContainer) {
+          const checked = checklistContainer.querySelectorAll('input[type="checkbox"]:checked');
+          const values = Array.from(checked).map(cb => cb.value);
+          if (values.length > 0) {
+            const valuesStr = values.join(', ');
+            const displayStr = valuesStr.length > 40 ? valuesStr.substring(0, 37) + '...' : valuesStr;
+            summaryText = `[ ${displayStr} ]`;
+          } else {
+            summaryText = '[ ]';
+          }
+        } else {
+          summaryText = summarizeArrayContainer(arrayContainer);
+        }
       }
       
       preview.textContent = summaryText;
