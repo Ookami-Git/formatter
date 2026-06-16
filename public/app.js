@@ -511,7 +511,7 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
 
 
         let entryIndex = 0;
-        const createEntryRow = (entryName = '', initialVal = null) => {
+        const createEntryRow = (entryName = '', initialVal = null, insertAfterEl = null) => {
           const entryCard = document.createElement('div');
           entryCard.className = 'array-item-card dynamic-object-entry has-header';
           entryCard.dataset.dynamicObjectEntryIndex = entryIndex;
@@ -576,6 +576,36 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
             }, 180);
           });
 
+          const btnDuplicate = document.createElement('button');
+          btnDuplicate.type = 'button';
+          btnDuplicate.className = 'btn-duplicate-item';
+          btnDuplicate.title = 'Dupliquer cette entrée';
+          btnDuplicate.innerHTML = `
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+          `;
+
+          btnDuplicate.addEventListener('click', () => {
+            const entryKey = keyInput.value.trim();
+            const duplicatedKey = entryKey ? `${entryKey}_copy` : '';
+            const entryValue = {};
+            if (field.fields) {
+              field.fields.forEach(subField => {
+                const subGroup = valueGroup.querySelector(`:scope > [data-field-name="${subField.name}"]`);
+                if (subGroup) {
+                  const val = extractFieldValue(subGroup, subField);
+                  if (val !== undefined) {
+                    entryValue[subField.name] = val;
+                  }
+                }
+              });
+            }
+            createEntryRow(duplicatedKey, entryValue, entryCard);
+            updateLiveOutput();
+          });
+
           const entryPath = `${fieldPath}[entry_${entryIndex}]`;
 
           const entryHeader = document.createElement('div');
@@ -593,7 +623,17 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
 
           const titleEl = titleWrapper.querySelector('.array-item-title');
           keyInput.addEventListener('input', () => {
-            titleEl.textContent = `Entrée : ${keyInput.value.trim() || '(sans nom)'}`;
+            const trimmed = keyInput.value.trim();
+            titleEl.textContent = `Entrée : ${trimmed || '(sans nom)'}`;
+            const newKeyName = trimmed || 'entry';
+            const inputs = entryCard.querySelectorAll('input, select, textarea');
+            inputs.forEach(input => {
+              if (input === keyInput) return;
+              const currentName = input.name;
+              const escapedPath = fieldPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const regex = new RegExp(`^(${escapedPath})\\.[^.]+`);
+              input.name = currentName.replace(regex, `$1.${newKeyName}`);
+            });
           });
 
           titleWrapper.addEventListener('click', () => {
@@ -610,8 +650,15 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
             entryCard.classList.add('is-collapsed');
           }
 
+          const headerActions = document.createElement('div');
+          headerActions.className = 'array-item-actions';
+          headerActions.style.display = 'flex';
+          headerActions.style.gap = '4px';
+          headerActions.appendChild(btnDuplicate);
+          headerActions.appendChild(btnRemove);
+
           entryHeader.appendChild(titleWrapper);
-          entryHeader.appendChild(btnRemove);
+          entryHeader.appendChild(headerActions);
           entryCard.appendChild(entryHeader);
           entryCard.appendChild(entryContent);
           entryCard.appendChild(valueGroup);
@@ -622,7 +669,11 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
             inp.addEventListener('change', updateLiveOutput);
           });
 
-          entriesList.appendChild(entryCard);
+          if (insertAfterEl) {
+            entriesList.insertBefore(entryCard, insertAfterEl.nextSibling);
+          } else {
+            entriesList.appendChild(entryCard);
+          }
           entryIndex++;
           updateEmptyState();
         };
@@ -703,7 +754,7 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
 
       // Handle array items creation
       let itemIndex = 0;
-      const createItemRow = (initialVal = null) => {
+      const createItemRow = (initialVal = null, insertAfterEl = null) => {
         const itemCard = document.createElement('div');
         itemCard.dataset.arrayItemIndex = itemIndex;
 
@@ -729,8 +780,52 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
             itemCard.remove();
             updateEmptyState();
             updateAllItemTitles();
+            updateArrayItemNames(itemsList, fieldPath);
             updateLiveOutput();
           }, 180);
+        });
+
+        const btnDuplicate = document.createElement('button');
+        btnDuplicate.type = 'button';
+        btnDuplicate.className = 'btn-duplicate-item';
+        btnDuplicate.title = 'Dupliquer cet élément';
+        btnDuplicate.innerHTML = `
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+        `;
+
+        btnDuplicate.addEventListener('click', () => {
+          let itemVal = null;
+          if (field.itemType === 'object') {
+            itemVal = {};
+            if (field.fields) {
+              field.fields.forEach(subField => {
+                const subGroup = itemCard.querySelector(`:scope > .array-item-content > [data-field-name="${subField.name}"]`);
+                if (subGroup) {
+                  const val = extractFieldValue(subGroup, subField);
+                  if (val !== undefined) {
+                    itemVal[subField.name] = val;
+                  }
+                }
+              });
+            }
+          } else {
+            const valueGroup = itemCard.querySelector(':scope > .array-item-content > [data-field-name="value"]');
+            if (valueGroup) {
+              const primitiveField = { type: field.itemType || 'string' };
+              const val = extractFieldValue(valueGroup, primitiveField);
+              if (val !== undefined) {
+                itemVal = val;
+              }
+            }
+          }
+
+          createItemRow(itemVal, itemCard);
+          updateAllItemTitles();
+          updateArrayItemNames(itemsList, fieldPath);
+          updateLiveOutput();
         });
 
         if (field.itemType === 'object') {
@@ -767,8 +862,15 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
             itemCard.classList.add('is-collapsed');
           }
 
+          const headerActions = document.createElement('div');
+          headerActions.className = 'array-item-actions';
+          headerActions.style.display = 'flex';
+          headerActions.style.gap = '4px';
+          headerActions.appendChild(btnDuplicate);
+          headerActions.appendChild(btnRemove);
+
           itemHeader.appendChild(titleWrapper);
-          itemHeader.appendChild(btnRemove);
+          itemHeader.appendChild(headerActions);
           itemCard.appendChild(itemHeader);
 
           if (field.fields && Array.isArray(field.fields)) {
@@ -806,7 +908,15 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
             itemContent.appendChild(primEl);
           }
           itemCard.appendChild(itemContent);
-          itemCard.appendChild(btnRemove);
+
+          const itemActions = document.createElement('div');
+          itemActions.className = 'array-item-actions';
+          itemActions.style.display = 'flex';
+          itemActions.style.gap = '4px';
+          itemActions.appendChild(btnDuplicate);
+          itemActions.appendChild(btnRemove);
+
+          itemCard.appendChild(itemActions);
         }
 
         // Listen to dynamic inputs inside new row
@@ -816,7 +926,11 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
           inp.addEventListener('change', updateLiveOutput);
         });
 
-        itemsList.appendChild(itemCard);
+        if (insertAfterEl) {
+          itemsList.insertBefore(itemCard, insertAfterEl.nextSibling);
+        } else {
+          itemsList.appendChild(itemCard);
+        }
         itemIndex++;
 
         updateEmptyState();
@@ -851,11 +965,13 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
 
         if (Array.isArray(displayValues)) {
           displayValues.forEach(val => createItemRow(val));
+          updateArrayItemNames(itemsList, fieldPath);
         }
       }
 
       btnAdd.addEventListener('click', () => {
         createItemRow();
+        updateArrayItemNames(itemsList, fieldPath);
         updateLiveOutput();
       });
 
@@ -1896,6 +2012,23 @@ function updateAllItemTitles() {
         titleEl.textContent = `Élément n°${index !== -1 ? index + 1 : 1}`;
       }
     }
+  });
+}
+
+function updateArrayItemNames(itemsList, fieldPath) {
+  const itemCards = Array.from(itemsList.querySelectorAll(':scope > .array-item-card'));
+  itemCards.forEach((itemCard, index) => {
+    // Find all inputs, selects, textareas in this itemCard
+    const inputs = itemCard.querySelectorAll('input, select, textarea');
+    inputs.forEach(input => {
+      const currentName = input.name;
+      if (currentName && currentName.startsWith(fieldPath)) {
+        // Replace the index part after fieldPath
+        const escapedPath = fieldPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`^(${escapedPath})\\[\\d+\\]`);
+        input.name = currentName.replace(regex, `$1[${index}]`);
+      }
+    });
   });
 }
 
