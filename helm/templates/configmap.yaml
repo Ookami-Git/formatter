@@ -1,6 +1,6 @@
 {{- $hasInline := false -}}
 {{- range .Values.app.configs -}}
-  {{- if eq .source "inline" -}}
+  {{- if and . (eq .source "inline") -}}
     {{- $hasInline = true -}}
   {{- end -}}
 {{- end -}}
@@ -14,7 +14,7 @@ metadata:
     {{- include "dynamic-form.labels" . | nindent 4 }}
 data:
   {{- range .Values.app.configs }}
-  {{- if eq .source "inline" }}
+  {{- if and . .id (eq .source "inline") }}
   {{ .id }}.yaml: |
     {{- .inline.schema | nindent 4 }}
   {{- end }}

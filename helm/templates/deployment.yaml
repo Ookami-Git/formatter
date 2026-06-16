@@ -45,41 +45,44 @@ spec:
             - name: CONFIGS_JSON
               value: >-
                 [
-                {{- range $index, $config := .Values.app.configs }}
-                  {{- if $index }},{{ end }}
-                  {
-                    "id": {{ $config.id | quote }},
-                    "name": {{ $config.name | quote }}
-                    {{- if eq $config.source "inline" -}}
-                      ,"sourceType": "local"
-                      ,"localPath": {{ printf "/app/config/%s.yaml" $config.id | quote }}
-                    {{- else if eq $config.source "configmap" -}}
-                      ,"sourceType": "local"
-                      ,"localPath": {{ printf "/app/config/%s/%s" $config.id (default "schema.yaml" $config.configmap.key) | quote }}
-                    {{- else if eq $config.source "secret" -}}
-                      ,"sourceType": "local"
-                      ,"localPath": {{ printf "/app/config/%s/%s" $config.id (default "schema.yaml" $config.secret.key) | quote }}
-                    {{- else if eq $config.source "url" -}}
-                      ,"sourceType": "url"
-                      ,"url": {{ $config.url.address | quote }}
-                      ,"urlIgnoreSsl": {{ $config.url.ignoreSsl }}
-                    {{- else if eq $config.source "git" -}}
-                      ,"sourceType": "git"
-                      ,"gitRepoUrl": {{ $config.git.repoUrl | quote }}
-                      ,"gitBranch": {{ $config.git.branch | quote }}
-                      ,"gitConfigPath": {{ $config.git.configPath | quote }}
-                      {{- if or $config.git.token $config.git.existingTokenSecret -}}
-                        ,"gitToken": {{ printf "$GIT_TOKEN_%s" ($config.id | upper | replace "-" "_") | quote }}
+                {{- $first := true }}
+                {{- range .Values.app.configs }}
+                  {{- if and . .id .source }}
+                    {{- if not $first }},{{- else }}{{- $first = false -}}{{- end }}
+                    {
+                      "id": {{ .id | quote }},
+                      "name": {{ .name | quote }}
+                      {{- if eq .source "inline" -}}
+                        ,"sourceType": "local"
+                        ,"localPath": {{ printf "/app/config/%s.yaml" .id | quote }}
+                      {{- else if eq .source "configmap" -}}
+                        ,"sourceType": "local"
+                        ,"localPath": {{ printf "/app/config/%s/%s" .id (default "schema.yaml" (and .configmap .configmap.key)) | quote }}
+                      {{- else if eq .source "secret" -}}
+                        ,"sourceType": "local"
+                        ,"localPath": {{ printf "/app/config/%s/%s" .id (default "schema.yaml" (and .secret .secret.key)) | quote }}
+                      {{- else if eq .source "url" -}}
+                        ,"sourceType": "url"
+                        ,"url": {{ (and .url .url.address) | quote }}
+                        ,"urlIgnoreSsl": {{ if and .url .url.ignoreSsl }}{{ .url.ignoreSsl }}{{ else }}false{{ end }}
+                      {{- else if eq .source "git" -}}
+                        ,"sourceType": "git"
+                        ,"gitRepoUrl": {{ (and .git .git.repoUrl) | quote }}
+                        ,"gitBranch": {{ if and .git .git.branch }}{{ .git.branch | quote }}{{ else }}"main"{{ end }}
+                        ,"gitConfigPath": {{ if and .git .git.configPath }}{{ .git.configPath | quote }}{{ else }}"variables.tf"{{ end }}
+                        {{- if and .git (or .git.token .git.existingTokenSecret) -}}
+                          ,"gitToken": {{ printf "$GIT_TOKEN_%s" (.id | upper | replace "-" "_") | quote }}
+                        {{- end -}}
                       {{- end -}}
-                    {{- end -}}
-                  }
+                    }
+                  {{- end }}
                 {{- end }}
                 ]
             {{- end }}
 
             {{- range .Values.app.configs }}
-            {{- if eq .source "git" }}
-            {{- if or .git.token .git.existingTokenSecret }}
+            {{- if and . .id (eq .source "git") }}
+            {{- if and .git (or .git.token .git.existingTokenSecret) }}
             - name: GIT_TOKEN_{{ .id | upper | replace "-" "_" }}
               valueFrom:
                 secretKeyRef:
@@ -108,7 +111,7 @@ spec:
             
             {{- $hasInline := false }}
             {{- range .Values.app.configs }}
-              {{- if eq .source "inline" }}{{ $hasInline = true }}{{ end }}
+              {{- if and . (eq .source "inline") }}{{ $hasInline = true }}{{ end }}
             {{- end }}
             {{- if $hasInline }}
             - name: inline-configs-volume
@@ -116,10 +119,10 @@ spec:
             {{- end }}
 
             {{- range .Values.app.configs }}
-            {{- if eq .source "configmap" }}
+            {{- if and . .id (eq .source "configmap") }}
             - name: configmap-volume-{{ .id }}
               mountPath: {{ printf "/app/config/%s" .id }}
-            {{- else if eq .source "secret" }}
+            {{- else if and . .id (eq .source "secret") }}
             - name: secret-volume-{{ .id }}
               mountPath: {{ printf "/app/config/%s" .id }}
             {{- end }}
@@ -136,11 +139,11 @@ spec:
         {{- end }}
 
         {{- range .Values.app.configs }}
-        {{- if eq .source "configmap" }}
+        {{- if and . .id (eq .source "configmap") }}
         - name: configmap-volume-{{ .id }}
           configMap:
             name: {{ .configmap.name }}
-        {{- else if eq .source "secret" }}
+        {{- else if and . .id (eq .source "secret") }}
         - name: secret-volume-{{ .id }}
           secret:
             secretName: {{ .secret.name }}
