@@ -109,13 +109,16 @@ kubectl create secret generic my-git-token --from-literal=GIT_TOKEN=ghp_xxxxxxxx
 
 **Helm** — via `values.yaml` :
 ```yaml
-config:
-  source: git
-  git:
-    repoUrl: "https://github.com/org/repo.git"
-    token: "ghp_xxxxxxxxxxxx"          # → crée un Secret automatiquement
-    # OU
-    existingTokenSecret: "my-git-secret"  # → utilise un Secret existant (clé: GIT_TOKEN)
+app:
+  configs:
+    - id: main
+      name: "Main Schema"
+      source: git
+      git:
+        repoUrl: "https://github.com/org/repo.git"
+        token: "ghp_xxxxxxxxxxxx"          # → crée un Secret automatiquement
+        # OU
+        existingTokenSecret: "my-git-secret"  # → utilise un Secret existant (clé: GIT_TOKEN)
 ```
 
 > **Note :** L'injection est automatique — GitHub reçoit `https://TOKEN@github.com/...`, GitLab reçoit `https://oauth2:TOKEN@gitlab.com/...`. Le token est masqué dans les logs serveur.
@@ -151,7 +154,7 @@ docker run -d -p 3000:3000 \
 ```
 
 **Avec Kubernetes (Helm) :**
-Vous pouvez monter un ConfigMap contenant plusieurs fichiers dans `/app/config` et configurer le paramètre `config.path` à `/app/config` (qui est un dossier). Le serveur traitera automatiquement ce dossier comme source multi-configs.
+Vous pouvez monter un ConfigMap contenant plusieurs fichiers dans `/app/config` et configurer le paramètre `app.configsDir` à `/app/config` (qui est un dossier). Le serveur traitera automatiquement ce dossier comme source multi-configs.
 
 ### Option 3 : Utiliser un fichier d'index de configurations (`CONFIGS_FILE`)
 Vous pouvez spécifier un fichier YAML ou JSON listant toutes vos configurations disponibles.
@@ -469,49 +472,76 @@ fields:
 
 ### Option 1 : Helm Chart (recommandé)
 
-La source de configuration se choisit via `config.source`. Chaque mode dispose de son propre bloc de configuration.
+La configuration se définit sous la racine `app` dans le fichier `values.yaml` (ou via `--set app.configs[...]`).
 
-#### Modes disponibles
+#### Exemples de configurations (dans `values.yaml`)
 
-| Mode | Description | Configuration requise |
-|---|---|---|
-| `embedded` | Schéma exemple intégré dans l'image Docker | Aucune |
-| `inline` | Schéma défini dans `values.yaml` | `config.inline.schema` |
-| `configmap` | ConfigMap Kubernetes existant | `config.configmap.name` |
-| `secret` | Secret Kubernetes existant | `config.secret.name` |
-| `url` | URL HTTP/HTTPS d'un fichier de schéma | `config.url.address` |
-| `git` | Dépôt Git (clone + rafraîchissement) | `config.git.*` |
+**Mode Mono-Configuration (Inline par défaut) :**
+```yaml
+app:
+  port: 3000
+  configs:
+    - id: default
+      name: "Configuration principale"
+      source: inline
+      inline:
+        schema: |
+          title: "Mon Application"
+          description: "Remplissez le formulaire pour générer votre configuration."
+          fields:
+            - name: app_name
+              label: "Nom de l'application"
+              type: string
+              default: "my-app"
+              required: true
+```
 
-#### Exemples
+**Mode Multi-Configurations (Inline + Git) :**
+```yaml
+app:
+  port: 3000
+  configs:
+    - id: web-app
+      name: "Frontend Config"
+      source: inline
+      inline:
+        schema: |
+          title: "Frontend Schema"
+          fields:
+            - name: front_port
+              type: integer
+              default: 80
+    - id: db-app
+      name: "Database (Git)"
+      source: git
+      git:
+        repoUrl: "https://github.com/my-org/db-repo.git"
+        branch: "main"
+        configPath: "variables.tf"
+        token: "ghp_xxxxxx"
+```
+
+**Mode Répertoire (scan de dossier monté) :**
+```yaml
+app:
+  port: 3000
+  configsDir: "/app/config"
+# Vous pouvez alors monter votre ConfigMap/Secret contenant vos schémas dans /app/config.
+```
+
+#### Exemples de commandes d'installation
 
 ```bash
-# Mode embedded — schéma d'exemple, aucune configuration
-helm install my-form ./helm --set config.source=embedded
-
-# Mode inline — schéma défini dans values.yaml (défaut)
+# Installer avec les valeurs par défaut (schéma exemple inline)
 helm install my-form ./helm
 
-# Mode configmap — ConfigMap existant
+# Mode répertoire — scanner un ConfigMap existant contenant plusieurs schémas
 helm install my-form ./helm \
-  --set config.source=configmap \
-  --set config.configmap.name=mon-configmap
-
-# Mode secret — Secret existant
-helm install my-form ./helm \
-  --set config.source=secret \
-  --set config.secret.name=mon-secret
-
-# Mode url — schéma chargé depuis une URL
-helm install my-form ./helm \
-  --set config.source=url \
-  --set config.url.address="https://raw.githubusercontent.com/org/repo/main/schema.yaml"
-
-# Mode git — dépôt privé avec token
-helm install my-form ./helm \
-  --set config.source=git \
-  --set config.git.repoUrl="https://github.com/org/repo.git" \
-  --set config.git.token="ghp_xxxx" \
-  --set config.git.configPath="infra/variables.tf"
+  --set app.configsDir="/app/config" \
+  --set "extraVolumes[0].name=schemas-vol" \
+  --set "extraVolumes[0].configMap.name=my-existing-schemas" \
+  --set "extraVolumeMounts[0].name=schemas-vol" \
+  --set "extraVolumeMounts[0].mountPath=/app/config"
 
 # Avec Ingress
 helm install my-form ./helm \
@@ -529,18 +559,24 @@ helm install my-form ./helm \
 | `replicaCount` | Nombre de réplicas | `1` |
 | `image.repository` | Image Docker | `ghcr.io/ookami-git/formatter` |
 | `image.tag` | Tag de l'image | `appVersion` du chart |
-| `config.source` | Source : `embedded` \| `inline` \| `configmap` \| `secret` \| `url` \| `git` | `inline` |
-| `config.port` | Port du serveur | `3000` |
-| `config.inline.schema` | Contenu YAML du schéma (mode `inline`) | Schéma exemple |
-| `config.configmap.name` | Nom du ConfigMap existant (mode `configmap`) | `""` |
-| `config.secret.name` | Nom du Secret existant (mode `secret`) | `""` |
-| `config.url.address` | URL du schéma (mode `url`) | `""` |
-| `config.url.ignoreSsl` | Ignorer la vérification SSL (mode `url`) | `false` |
-| `config.git.repoUrl` | URL du repo Git (mode `git`) | `""` |
-| `config.git.branch` | Branche Git | `main` |
-| `config.git.configPath` | Fichier de config dans le repo | `variables.tf` |
-| `config.git.token` | Token Git → Secret créé automatiquement | `""` |
-| `config.git.existingTokenSecret` | Secret existant contenant `GIT_TOKEN` | `""` |
+| `app.port` | Port d'écoute du serveur Node.js | `3000` |
+| `app.configsDir` | Répertoire à scanner pour charger plusieurs configurations | `""` |
+| `app.configs` | Liste des configurations gérées par l'application | (1 configuration inline par défaut) |
+| `app.configs[].id` | ID unique de la configuration (utilisé dans l'URL) | `default` |
+| `app.configs[].name` | Nom de la configuration affiché dans le sélecteur de l'interface | `Configuration principale` |
+| `app.configs[].source` | Type de source : `inline` \| `configmap` \| `secret` \| `url` \| `git` | `inline` |
+| `app.configs[].inline.schema` | Schéma YAML défini en ligne (si `source: inline`) | Schéma exemple |
+| `app.configs[].configmap.name` | Nom du ConfigMap existant (si `source: configmap`) | `""` |
+| `app.configs[].configmap.key` | Clé du fichier schéma dans le ConfigMap | `schema.yaml` |
+| `app.configs[].secret.name` | Nom du Secret existant (si `source: secret`) | `""` |
+| `app.configs[].secret.key` | Clé du fichier schéma dans le Secret | `schema.yaml` |
+| `app.configs[].url.address` | URL HTTP/HTTPS du fichier de schéma (si `source: url`) | `""` |
+| `app.configs[].url.ignoreSsl` | Ignorer la vérification SSL (si `source: url`) | `false` |
+| `app.configs[].git.repoUrl` | URL du dépôt Git (si `source: git`) | `""` |
+| `app.configs[].git.branch` | Branche Git à cloner | `main` |
+| `app.configs[].git.configPath` | Chemin du fichier dans le dépôt Git | `variables.tf` |
+| `app.configs[].git.token` | Token Git (crée un Secret automatiquement) | `""` |
+| `app.configs[].git.existingTokenSecret` | Secret existant contenant `GIT_TOKEN` | `""` |
 | `service.type` | Type de service K8s | `ClusterIP` |
 | `service.port` | Port du service | `80` |
 | `ingress.enabled` | Activer l'Ingress | `false` |

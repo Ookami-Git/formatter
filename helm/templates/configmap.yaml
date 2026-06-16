@@ -1,11 +1,22 @@
-{{- if eq .Values.config.source "inline" }}
+{{- $hasInline := false -}}
+{{- range .Values.app.configs -}}
+  {{- if eq .source "inline" -}}
+    {{- $hasInline = true -}}
+  {{- end -}}
+{{- end -}}
+
+{{- if $hasInline }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "dynamic-form.fullname" . }}-schema
+  name: {{ include "dynamic-form.fullname" . }}-inline-configs
   labels:
     {{- include "dynamic-form.labels" . | nindent 4 }}
 data:
-  schema.yaml: |
-    {{- .Values.config.inline.schema | nindent 4 }}
+  {{- range .Values.app.configs }}
+  {{- if eq .source "inline" }}
+  {{ .id }}.yaml: |
+    {{- .inline.schema | nindent 4 }}
+  {{- end }}
+  {{- end }}
 {{- end }}

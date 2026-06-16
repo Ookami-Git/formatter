@@ -342,7 +342,10 @@ async function loadSchemaData({ sourceType, localPath, gitRepoUrl, gitBranch, gi
   if (actualSourceType === 'git') {
     const repoUrl = (sourceType === 'default' && !gitRepoUrl) ? GIT_REPO_URL_RAW : gitRepoUrl;
     const branch = (sourceType === 'default' && !gitBranch) ? GIT_BRANCH : gitBranch;
-    const token = (sourceType === 'default' && gitToken === undefined) ? GIT_TOKEN : gitToken;
+    let token = (sourceType === 'default' && gitToken === undefined) ? GIT_TOKEN : gitToken;
+    if (token && token.startsWith('$')) {
+      token = process.env[token.substring(1)] || '';
+    }
     const configPath = (sourceType === 'default' && !gitConfigPath) ? GIT_CONFIG_PATH : gitConfigPath;
 
     if (!repoUrl) {
@@ -412,7 +415,11 @@ try {
   configs.forEach(config => {
     if (config.sourceType === 'git' && config.gitRepoUrl) {
       const branch = config.gitBranch || 'main';
-      syncGitRepoDynamic(config.gitRepoUrl, branch, config.gitToken, true)
+      let token = config.gitToken || '';
+      if (token && token.startsWith('$')) {
+        token = process.env[token.substring(1)] || '';
+      }
+      syncGitRepoDynamic(config.gitRepoUrl, branch, token, true)
         .then(() => console.log(`[Startup] Initial Git sync successful for config: ${config.id}`))
         .catch(err => console.warn(`[Startup Warning] Initial Git sync failed for config ${config.id}: ${err.message}`));
     }
@@ -441,7 +448,10 @@ app.get('/api/branches', async (req, res) => {
 
   try {
     const repoUrl = selectedConfig.gitRepoUrl;
-    const token = selectedConfig.gitToken || '';
+    let token = selectedConfig.gitToken || '';
+    if (token && token.startsWith('$')) {
+      token = process.env[token.substring(1)] || '';
+    }
     
     // Build authenticated repo URL
     let authRepoUrl = repoUrl;

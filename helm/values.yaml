@@ -19,95 +19,58 @@ fullnameOverride: ""
 # ──────────────────────────────────────────────
 # Configuration de l'application
 # ──────────────────────────────────────────────
-config:
-  # ────────────────────────────────────────────────────────────────────────────
-  # Source de configuration — choisissez UNE seule valeur parmi :
-  #
-  #   embedded  → Utilise le schéma exemple intégré dans l'image Docker.
-  #               (/app/examples/schema.yaml). Aucune configuration requise.
-  #
-  #   inline    → Définit le schéma directement dans ce fichier via config.inline.schema.
-  #               Un ConfigMap est créé automatiquement par le chart Helm.
-  #
-  #   configmap → Monte un ConfigMap Kubernetes existant.
-  #               Renseigner config.configmap.name.
-  #
-  #   secret    → Monte un Secret Kubernetes existant.
-  #               Renseigner config.secret.name.
-  #
-  #   url       → Charge le schéma depuis une URL HTTP/HTTPS à chaque requête.
-  #               Renseigner config.url.address.
-  #
-  #   git       → Clone un dépôt Git au démarrage et à chaque rafraîchissement.
-  #               Renseigner config.git.* ci-dessous.
-  # ────────────────────────────────────────────────────────────────────────────
-  source: inline
-
+app:
   # -- Port d'écoute du serveur
   port: 3000
 
-  # -- Tableau de configurations pour le mode Multi-Config (injecté via CONFIGS_JSON)
-  configs: []
-  # Exemple:
-  # configs:
-  #   - id: frontend
-  #     name: "Frontend Schema"
-  #     sourceType: local
-  #     localPath: "/app/config/frontend.yaml"
-  #   - id: backend
-  #     name: "Backend Schema"
-  #     sourceType: url
-  #     url: "https://example.com/backend.yaml"
+  # -- Dossier à scanner pour charger automatiquement plusieurs configurations.
+  #    Idéal pour monter un ConfigMap ou Secret contenant plusieurs fichiers.
+  #    L'application scannera alors tous les fichiers (.yaml, .yml, .json, .tf) de ce dossier.
+  configsDir: ""
 
-  # -- Chemin alternatif du fichier ou dossier de configuration (mode local/configmap/secret)
-  #    Par défaut, s'il n'est pas défini, utilise "/app/config/schema.yaml"
-  path: ""
+  # -- Liste de configurations gérées par l'application.
+  #    Chaque entrée représente un schéma indépendant. S'il n'y a qu'une seule configuration,
+  #    l'interface masquera le sélecteur de configuration et fonctionnera en mode standard.
+  configs:
+    - id: default
+      name: "Configuration principale"
+      # -- Source du schéma : inline | configmap | secret | url | git
+      source: inline
 
-  # ── Mode : inline ────────────────────────────────────────────────────────────
-  # Contenu du schéma YAML injecté dans un ConfigMap créé par le chart.
-  # (utilisé uniquement si source: inline)
-  inline:
-    schema: |
-      title: "Mon Application"
-      description: "Remplissez le formulaire pour générer votre configuration."
-      fields:
-        - name: app_name
-          label: "Nom de l'application"
-          type: string
-          default: "my-app"
-          required: true
+      # -- Schéma défini en ligne (si source: inline)
+      inline:
+        schema: |
+          title: "Mon Application"
+          description: "Remplissez le formulaire pour générer votre configuration."
+          fields:
+            - name: app_name
+              label: "Nom de l'application"
+              type: string
+              default: "my-app"
+              required: true
 
-  # ── Mode : configmap ──────────────────────────────────────────────────────────
-  # (utilisé uniquement si source: configmap)
-  configmap:
-    name: ""    # -- Nom du ConfigMap Kubernetes existant contenant schema.yaml
+      # -- ConfigMap existant à monter (si source: configmap)
+      configmap:
+        name: ""
+        key: "schema.yaml"
 
-  # ── Mode : secret ─────────────────────────────────────────────────────────────
-  # (utilisé uniquement si source: secret)
-  secret:
-    name: ""    # -- Nom du Secret Kubernetes existant contenant schema.yaml
+      # -- Secret existant à monter (si source: secret)
+      secret:
+        name: ""
+        key: "schema.yaml"
 
-  # ── Mode : url ────────────────────────────────────────────────────────────────
-  # (utilisé uniquement si source: url)
-  url:
-    address: ""         # -- URL HTTP/HTTPS du fichier de schéma (yaml, json, tf)
-    ignoreSsl: false    # -- Ignorer la vérification du certificat SSL
+      # -- URL distante du schéma (si source: url)
+      url:
+        address: ""
+        ignoreSsl: false
 
-  # ── Mode : git ────────────────────────────────────────────────────────────────
-  # (utilisé uniquement si source: git)
-  git:
-    # -- URL du dépôt Git (sans token — le token est injecté séparément)
-    repoUrl: ""
-    # -- Branche à cloner
-    branch: main
-    # -- Chemin du fichier de configuration dans le dépôt
-    configPath: variables.tf
-    # -- Token d'authentification Git (sera stocké dans un Secret Kubernetes)
-    #    Laisser vide si vous utilisez existingTokenSecret ou un repo public
-    token: ""
-    # -- Nom d'un Secret Kubernetes existant contenant la clé "GIT_TOKEN"
-    #    Si défini, il est utilisé à la place de git.token
-    existingTokenSecret: ""
+      # -- Dépôt Git à cloner (si source: git)
+      git:
+        repoUrl: ""
+        branch: main
+        configPath: variables.tf
+        token: ""
+        existingTokenSecret: ""
 
 # ──────────────────────────────────────────────
 # Kubernetes Resources
