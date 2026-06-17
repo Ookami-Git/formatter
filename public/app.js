@@ -337,6 +337,7 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
   formGroup.className = 'form-group';
   formGroup.dataset.fieldName = field.name;
   formGroup.dataset.fieldType = field.type;
+  formGroup.dataset.fieldPath = fieldPath;
 
   // Create label and description header
   const labelContainer = document.createElement('div');
@@ -1224,7 +1225,7 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
 }
 
 // Recursively traverse and extract data from DOM tree matching form fields
-function extractFormData() {
+function extractFormData(ignoreConditions = false) {
   const activeSchema = isMultiDoc ? appSchema[activeTabIndex].schema : appSchema;
   if (!activeSchema || !activeSchema.fields) return {};
 
@@ -1234,14 +1235,20 @@ function extractFormData() {
     // Find the root form group for this field
     const formGroup = elFormFieldsContainer.querySelector(`:scope > [data-field-name="${field.name}"]`);
     if (formGroup) {
-      data[field.name] = extractFieldValue(formGroup, field);
+      if (!ignoreConditions && formGroup.classList.contains('condition-hidden')) {
+        return;
+      }
+      const val = extractFieldValue(formGroup, field, ignoreConditions);
+      if (val !== undefined) {
+        data[field.name] = val;
+      }
     }
   });
 
   return data;
 }
 
-function extractFieldValue(formGroup, field) {
+function extractFieldValue(formGroup, field, ignoreConditions = false) {
   switch (field.type) {
     case 'boolean':
       const cb = formGroup.querySelector('input[type="checkbox"]');
@@ -1284,7 +1291,10 @@ function extractFieldValue(formGroup, field) {
             field.fields.forEach(subField => {
               const subGroup = valueGroup.querySelector(`:scope > [data-field-name="${subField.name}"]`);
               if (subGroup) {
-                const val = extractFieldValue(subGroup, subField);
+                if (!ignoreConditions && subGroup.classList.contains('condition-hidden')) {
+                  return;
+                }
+                const val = extractFieldValue(subGroup, subField, ignoreConditions);
                 if (val !== undefined) {
                   entryValue[subField.name] = val;
                 }
@@ -1305,7 +1315,10 @@ function extractFieldValue(formGroup, field) {
       field.fields.forEach(subField => {
         const subGroup = objectContainer.querySelector(`:scope > [data-field-name="${subField.name}"]`);
         if (subGroup) {
-          const val = extractFieldValue(subGroup, subField);
+          if (!ignoreConditions && subGroup.classList.contains('condition-hidden')) {
+            return;
+          }
+          const val = extractFieldValue(subGroup, subField, ignoreConditions);
           if (val !== undefined) {
             objData[subField.name] = val;
           }
@@ -1347,8 +1360,11 @@ function extractFieldValue(formGroup, field) {
           const keyGroup = itemCard.querySelector(':scope > .array-item-content > [data-field-name="key"]');
           const valueGroup = itemCard.querySelector(':scope > .array-item-content > [data-field-name="value"]');
           if (keyGroup && valueGroup) {
-            const k = extractFieldValue(keyGroup, { type: 'string' });
-            const v = extractFieldValue(valueGroup, { type: field.fields[1].type || 'string' });
+            if (!ignoreConditions && (keyGroup.classList.contains('condition-hidden') || valueGroup.classList.contains('condition-hidden'))) {
+              return;
+            }
+            const k = extractFieldValue(keyGroup, { type: 'string' }, ignoreConditions);
+            const v = extractFieldValue(valueGroup, { type: field.fields[1].type || 'string' }, ignoreConditions);
             if (k) {
               mapData[k] = v;
             }
@@ -1366,7 +1382,10 @@ function extractFieldValue(formGroup, field) {
             field.fields.forEach(subField => {
               const subGroup = itemCard.querySelector(`:scope > .array-item-content > [data-field-name="${subField.name}"]`);
               if (subGroup) {
-                const val = extractFieldValue(subGroup, subField);
+                if (!ignoreConditions && subGroup.classList.contains('condition-hidden')) {
+                  return;
+                }
+                const val = extractFieldValue(subGroup, subField, ignoreConditions);
                 if (val !== undefined) {
                   itemVal[subField.name] = val;
                 }
@@ -1378,8 +1397,11 @@ function extractFieldValue(formGroup, field) {
           // Primitive item in array (has a wrapper div with data-field-name="value")
           const valueGroup = itemCard.querySelector(':scope > .array-item-content > [data-field-name="value"]');
           if (valueGroup) {
+            if (!ignoreConditions && valueGroup.classList.contains('condition-hidden')) {
+              return;
+            }
             const primitiveField = { type: field.itemType || 'string' };
-            const val = extractFieldValue(valueGroup, primitiveField);
+            const val = extractFieldValue(valueGroup, primitiveField, ignoreConditions);
             if (val !== undefined) {
               arrayData.push(val);
             }
@@ -1482,6 +1504,9 @@ function cleanEmptyValues(obj) {
 // Refresh code output panel
 function updateLiveOutput() {
   if (!appSchema) return;
+
+  // Update conditional fields visibility first!
+  updateConditionalFields();
 
   // Update collapsible previews and item titles
   updateAllItemTitles();
@@ -2660,6 +2685,175 @@ function updateCollapsePreviews() {
         summaryText = summarizeObjectContainer(itemContent);
       }
       preview.textContent = summaryText;
+    }
+  });
+}
+
+// ===== Conditional Fields Core Helpers =====
+
+function parsePath(pathStr) {
+  let cleanPath = pathStr;
+  if (isMultiDoc) {
+    cleanPath = pathStr.replace(/^tab\d+\./, '');
+  }
+  
+  const parts = [];
+  const regex = /([^.[\]]+)|\[(\d+)\]/g;
+  let match;
+  while ((match = regex.exec(cleanPath)) !== null) {
+    if (match[1] !== undefined) {
+      parts.push(match[1]);
+    } else if (match[2] !== undefined) {
+      parts.push(parseInt(match[2], 10));
+    }
+  }
+  return parts;
+}
+
+function getValueByPath(obj, pathParts) {
+  let current = obj;
+  for (const part of pathParts) {
+    if (current === null || current === undefined) return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
+function resolveRelativePath(currentPathStr, relPathStr) {
+  let currentParts = parsePath(currentPathStr);
+  if (currentParts.length > 0) {
+    currentParts.pop(); // Remove current field name to get parent/sibling directory
+  }
+  
+  if (relPathStr.startsWith('/')) {
+    return relPathStr.split('/').filter(Boolean);
+  }
+  
+  const relSegments = relPathStr.split('/');
+  for (const seg of relSegments) {
+    if (seg === '..') {
+      currentParts.pop();
+    } else if (seg && seg !== '.') {
+      currentParts.push(seg);
+    }
+  }
+  return currentParts;
+}
+
+function preprocessCondition(conditionStr, currentFieldPath, formData, pathVarsMap) {
+  const pathRegex = /(?:\.\.\/|\.\/|\/)[\w\-./[\]]*/g;
+  
+  return conditionStr.replace(pathRegex, (match) => {
+    const resolvedPath = resolveRelativePath(currentFieldPath, match);
+    const value = getValueByPath(formData, resolvedPath);
+    
+    const varName = `path_var_${Object.keys(pathVarsMap).length}`;
+    pathVarsMap[varName] = value;
+    
+    return varName;
+  });
+}
+
+function evaluateCondition(conditionStr, context) {
+  const safeContext = new Proxy(context, {
+    has(target, key) {
+      return true; // Claim we have all keys to prevent ReferenceError
+    },
+    get(target, key) {
+      if (key === Symbol.unscopables) return undefined;
+      return target[key];
+    }
+  });
+
+  try {
+    const fn = new Function('ctx', `with(ctx) { return (${conditionStr}); }`);
+    return !!fn(safeContext);
+  } catch (err) {
+    console.warn('Error evaluating condition:', conditionStr, err);
+    return false;
+  }
+}
+
+function getFieldDefinitionByPath(pathStr) {
+  let cleanPath = pathStr;
+  if (isMultiDoc) {
+    cleanPath = pathStr.replace(/^tab\d+\./, '');
+  }
+  
+  const segments = cleanPath.split(/\.|\[\d+\]/).filter(Boolean);
+  const activeSchema = isMultiDoc ? appSchema[activeTabIndex].schema : appSchema;
+  if (!activeSchema || !activeSchema.fields) return null;
+  
+  let currentFields = activeSchema.fields;
+  let targetField = null;
+  
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    targetField = currentFields.find(f => f.name === seg);
+    if (!targetField) return null;
+    
+    if (i < segments.length - 1) {
+      if (targetField.type === 'object' && targetField.fields) {
+        currentFields = targetField.fields;
+      } else if (targetField.type === 'array' && targetField.itemType === 'object' && targetField.fields) {
+        currentFields = targetField.fields;
+      } else {
+        return null;
+      }
+    }
+  }
+  
+  return targetField;
+}
+
+function buildEvalContext(formData, pathStr) {
+  const pathParts = parsePath(pathStr);
+  const context = { ...formData };
+  
+  const currentParts = [];
+  for (let i = 0; i < pathParts.length - 1; i++) {
+    currentParts.push(pathParts[i]);
+    const ancestorVal = getValueByPath(formData, currentParts);
+    if (ancestorVal && typeof ancestorVal === 'object' && !Array.isArray(ancestorVal)) {
+      Object.assign(context, ancestorVal);
+    } else if (ancestorVal && typeof ancestorVal === 'object' && Array.isArray(ancestorVal)) {
+      const nextPart = pathParts[i + 1];
+      if (typeof nextPart === 'number') {
+        const itemVal = ancestorVal[nextPart];
+        if (itemVal && typeof itemVal === 'object' && !Array.isArray(itemVal)) {
+          Object.assign(context, itemVal);
+        }
+      }
+    }
+  }
+  
+  return context;
+}
+
+function updateConditionalFields() {
+  const fullData = extractFormData(true); // Extract all values including hidden fields
+  const fieldEls = elFormFieldsContainer.querySelectorAll('.form-group, .switch-container');
+  
+  fieldEls.forEach(el => {
+    const pathStr = el.dataset.fieldPath;
+    if (!pathStr) return;
+    
+    const fieldDef = getFieldDefinitionByPath(pathStr);
+    if (!fieldDef || !fieldDef.condition) {
+      el.classList.remove('condition-hidden');
+      return;
+    }
+    
+    const pathVarsMap = {};
+    const processedCondition = preprocessCondition(fieldDef.condition, pathStr, fullData, pathVarsMap);
+    
+    const context = { ...buildEvalContext(fullData, pathStr), ...pathVarsMap };
+    const isMet = evaluateCondition(processedCondition, context);
+    
+    if (isMet) {
+      el.classList.remove('condition-hidden');
+    } else {
+      el.classList.add('condition-hidden');
     }
   });
 }

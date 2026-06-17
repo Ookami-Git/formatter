@@ -1091,3 +1091,8 @@ code[class*="language-"] {
   margin-bottom: 0;
 }
 
+/* Conditional fields styling */
+.condition-hidden {
+  display: none !important;
+}
+

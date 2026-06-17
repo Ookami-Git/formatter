@@ -1,0 +1,33 @@
+title: "Test Conditions (YAML)"
+description: "Formulaire de test pour valider les champs conditionnés, les chemins relatifs et les conditions chaînées."
+outputFormat: "yaml"
+fields:
+  - name: env
+    label: "Environnement"
+    type: select
+    options: [dev, prod]
+    default: dev
+
+  - name: enable_ssl
+    label: "Activer SSL"
+    type: boolean
+    default: false
+
+  - name: ssl_config
+    label: "Configuration SSL"
+    type: object
+    condition: "enable_ssl == true"
+    fields:
+      - name: port
+        label: "Port SSL"
+        type: integer
+        default: 443
+        condition: "/enable_ssl == true"
+        required: true
+
+      - name: cert_secret
+        label: "Secret du Certificat"
+        type: string
+        default: "secret-vault-key"
+        condition: "/enable_ssl == true && /env == 'prod'"
+        required: true

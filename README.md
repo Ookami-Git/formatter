@@ -359,10 +359,12 @@ variable "tags" {
 - `@optionsFrom(<target> = <source>)` permet de lier un champ de type `select` à des valeurs provenant d'une autre propriété du schéma.
   - `<source>` peut être un chemin absolu commençant par `/` ou un chemin relatif avec `..`.
   - `<target>` peut cibler un sous-champ au sein d'un objet complexe.
-- `@optionsUrl(<target> = <source_url_or_json>)` permet de charger dynamiquement des options depuis une URL HTTP(S) externe.
+- @optionsUrl(<target> = <source_url_or_json>)` permet de charger dynamiquement des options depuis une URL HTTP(S) externe.
   - `<source_url_or_json>` peut être une simple URL ou un objet JSON complet (avec paramètres `auth`, `ignoreSsl`, `path`).
+- `@condition(<expression>)` permet de définir une condition de visibilité pour la variable. La variable ne s'affiche et son contenu n'est généré que si l'expression est vraie.
+  - `@condition(<target> = <expression>)` permet de cibler un sous-champ au sein d'un objet complexe.
 
-> Pour les schémas YAML/JSON, utilisez directement la propriété `optionsFrom` ou `optionsUrl` au niveau du champ.
+> Pour les schémas YAML/JSON, utilisez directement la propriété `optionsFrom`, `optionsUrl` ou `condition` au niveau du champ.
 
 Exemples :
 
@@ -443,6 +445,64 @@ Chaque élément du tableau `fields` comporte les propriétés suivantes :
 | `dynamicKeys` | `boolean` | Optionnel | Si `true`, l'objet est rendu comme une carte dont les clés sont ajoutées à la volée. |
 | `keyLabel` | `string` | Optionnel | Libellé du champ utilisé pour saisir la clé d'un objet dynamique. |
 | `validation` | `object` | Optionnel | Règles de validation. Supporté pour les champs de type `string` (voir ci-dessous). |
+| `condition` | `string` | Optionnel | Expression JavaScript définissant la condition d'affichage du champ (ex: `enable_ssl == true`). Supporte les opérateurs logiques (`&&`, `||`, `!`) et les chemins relatifs (ex: `../enable_ssl`). |
+
+---
+
+#### 🔀 Champs conditionnés (Conditions de visibilité)
+
+Il est possible de masquer des champs du formulaire et de les exclure totalement du document de sortie (JSON, YAML ou HCL/tfvars) selon une condition logique.
+
+##### Expressions supportées
+Les conditions sont des expressions JavaScript évaluées dynamiquement. Vous pouvez utiliser :
+- Des opérateurs de comparaison (`==`, `!=`, `<`, `>`, `===`, etc.).
+- Des opérateurs logiques pour chaîner des conditions : `&&` (ET), `||` (OU), `!` (NON).
+- Des parenthèses `( )` pour définir des priorités d'évaluation.
+
+##### Chemins relatifs (Navigation dans la configuration)
+Si un champ est imbriqué dans un objet ou un tableau, vous pouvez faire référence à d'autres champs à l'aide de chemins relatifs ou absolus :
+- `enable_ssl` ou `./enable_ssl` : fait référence à un champ frère (au même niveau).
+- `../enable_ssl` : monte d'un niveau (parent) pour trouver `enable_ssl`.
+- `../../env` : monte de deux niveaux.
+- `/env` : cible le champ `env` situé à la racine du schéma.
+
+##### Exemple YAML :
+```yaml
+fields:
+  - name: env
+    type: select
+    options: [dev, prod]
+    default: dev
+  - name: enable_ssl
+    type: boolean
+    default: false
+  - name: ssl_config
+    type: object
+    fields:
+      - name: port
+        type: integer
+        default: 443
+        condition: "../enable_ssl == true"
+      - name: cert_secret
+        type: string
+        condition: "../enable_ssl == true && ../../env == 'prod'"
+```
+
+##### Exemple Terraform HCL :
+```hcl
+variable "env" {
+  type    = string
+  default = "dev"
+}
+
+variable "database" {
+  type = object({
+    use_ssl  = bool
+    ssl_port = number
+  })
+  description = "Config DB. @condition(ssl_port = use_ssl == true && ../env == 'prod')"
+}
+```
 
 ---
 
