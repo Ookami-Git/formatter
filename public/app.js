@@ -2365,7 +2365,7 @@ function updateDynamicDropdowns(formData) {
   
   containers.forEach(container => {
     const optionsFrom = container.dataset.optionsFrom;
-    const fieldPath = container.name || container.getAttribute('name');
+    const fieldPath = getActualFieldPath(container);
     const isChecklist = container.dataset.fieldBind === 'checklist';
 
     let currentValue;
@@ -2780,7 +2780,7 @@ function getFieldDefinitionByPath(pathStr) {
     cleanPath = pathStr.replace(/^tab\d+\./, '');
   }
   
-  const segments = cleanPath.split(/\.|\[\d+\]/).filter(Boolean);
+  const segments = cleanPath.split(/\.|\[|\]/).filter(Boolean);
   const activeSchema = isMultiDoc ? appSchema[activeTabIndex].schema : appSchema;
   if (!activeSchema || !activeSchema.fields) return null;
   
@@ -2789,17 +2789,32 @@ function getFieldDefinitionByPath(pathStr) {
   
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
-    targetField = currentFields.find(f => f.name === seg);
-    if (!targetField) return null;
     
-    if (i < segments.length - 1) {
-      if (targetField.type === 'object' && targetField.fields) {
+    // Check if the current parent structure was an array of objects
+    // and the segment looks like an index (e.g. 0, item_0, entry_0).
+    if (targetField && targetField.type === 'array' && targetField.itemType === 'object') {
+      const isIndex = !isNaN(Number(seg)) || seg.startsWith('item_') || seg.startsWith('entry_');
+      if (isIndex) {
+        targetField = { type: 'object', fields: targetField.fields || [] };
         currentFields = targetField.fields;
-      } else if (targetField.type === 'array' && targetField.itemType === 'object' && targetField.fields) {
-        currentFields = targetField.fields;
-      } else {
-        return null;
+        continue;
       }
+    }
+    
+    // Check if the current parent structure was a dynamic key map/object
+    // and the segment represents a user-provided dynamic key.
+    if (targetField && targetField.type === 'object' && targetField.dynamicKeys) {
+      targetField = { type: 'object', fields: targetField.fields || [] };
+      currentFields = targetField.fields;
+      continue;
+    }
+    
+    const nextField = currentFields.find(f => f.name === seg);
+    if (!nextField) return null;
+    
+    targetField = nextField;
+    if (targetField.fields) {
+      currentFields = targetField.fields;
     }
   }
   
@@ -2830,12 +2845,56 @@ function buildEvalContext(formData, pathStr) {
   return context;
 }
 
+function getActualFieldPath(element) {
+  const segments = [];
+  let current = element;
+  
+  while (current && current !== elFormFieldsContainer) {
+    if (current.classList.contains('form-group')) {
+      const fieldName = current.dataset.fieldName;
+      if (fieldName) {
+        segments.unshift(fieldName);
+      }
+    }
+    else if (current.classList.contains('dynamic-object-entry')) {
+      const keyInput = current.querySelector(':scope > .array-item-content [data-dynamic-object-key="true"]');
+      const keyVal = keyInput ? keyInput.value.trim() : '';
+      segments.unshift(keyVal || 'entry');
+    }
+    else if (current.classList.contains('array-item-card')) {
+      const itemsList = current.closest('.array-items-list');
+      if (itemsList) {
+        const allItems = Array.from(itemsList.querySelectorAll(':scope > .array-item-card'));
+        const index = allItems.indexOf(current);
+        segments.unshift(index !== -1 ? index : 0);
+      }
+    }
+    current = current.parentElement;
+  }
+  
+  let pathStr = '';
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (typeof seg === 'number') {
+      pathStr += `[${seg}]`;
+    } else {
+      pathStr += pathStr ? `.${seg}` : seg;
+    }
+  }
+  
+  if (isMultiDoc) {
+    pathStr = `tab${activeTabIndex}.${pathStr}`;
+  }
+  
+  return pathStr;
+}
+
 function updateConditionalFields() {
   const fullData = extractFormData(true); // Extract all values including hidden fields
   const fieldEls = elFormFieldsContainer.querySelectorAll('.form-group, .switch-container');
   
   fieldEls.forEach(el => {
-    const pathStr = el.dataset.fieldPath;
+    const pathStr = getActualFieldPath(el);
     if (!pathStr) return;
     
     const fieldDef = getFieldDefinitionByPath(pathStr);
