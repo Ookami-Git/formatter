@@ -25,7 +25,7 @@ variable "database" {
 variable "vms" {
   description = "Map of the vms @optionsFrom(vgs.disks = ../../add_volumes) @condition(add_volumes.iops = ./type == 'io1') @optionsFrom(add_volumes.iops = [10, 100, 1000])"
   type = map(object({
-    running       = optional(bool)
+    running       = optional(bool, true)
     ip_address    = string
     vm_type       = string
     subnet_name   = string
