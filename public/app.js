@@ -586,8 +586,50 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
         numInput.step = 'any';
       }
 
+      if (field.min !== undefined && field.min !== null && field.min !== '') {
+        numInput.min = field.min;
+      }
+      if (field.max !== undefined && field.max !== null && field.max !== '') {
+        numInput.max = field.max;
+      }
+
       const finalNumVal = cachedVal !== undefined ? cachedVal : (field.default !== undefined ? field.default : '');
       numInput.value = finalNumVal;
+
+      const clampValue = () => {
+        if (numInput.value === '') return;
+        let val = parseFloat(numInput.value);
+        if (isNaN(val)) return;
+
+        let corrected = false;
+        if (field.min !== undefined && field.min !== null && field.min !== '') {
+          const minVal = parseFloat(field.min);
+          if (val < minVal) {
+            val = minVal;
+            corrected = true;
+          }
+        }
+        if (field.max !== undefined && field.max !== null && field.max !== '') {
+          const maxVal = parseFloat(field.max);
+          if (val > maxVal) {
+            val = maxVal;
+            corrected = true;
+          }
+        }
+
+        if (corrected) {
+          if (field.type === 'integer') {
+            val = Math.round(val);
+          }
+          numInput.value = val;
+          updateLiveOutput();
+        }
+      };
+
+      numInput.addEventListener('change', clampValue);
+      numInput.addEventListener('blur', clampValue);
+      clampValue();
+
       formGroup.appendChild(numInput);
       break;
 
@@ -608,7 +650,44 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
         btnAddEntry.style.alignSelf = 'flex-start';
         btnAddEntry.textContent = 'Ajouter une entrée';
 
+        const hasMin = field.min !== undefined && field.min !== null && field.min !== '';
+        const hasMax = field.max !== undefined && field.max !== null && field.max !== '';
 
+        let errEl = null;
+        if (hasMin) {
+          errEl = document.createElement('span');
+          errEl.className = 'field-validation-error';
+          errEl.setAttribute('aria-live', 'polite');
+          errEl.style.display = 'none';
+          formGroup.appendChild(errEl);
+        }
+
+        const checkObjectConstraints = () => {
+          const count = entriesList.children.length;
+
+          if (hasMin && errEl) {
+            const minVal = parseInt(field.min, 10);
+            if (count < minVal) {
+              errEl.textContent = `Le nombre d'éléments doit être d'au moins ${minVal} (actuellement ${count})`;
+              errEl.style.display = 'block';
+            } else {
+              errEl.style.display = 'none';
+            }
+          }
+
+          if (hasMax) {
+            const maxVal = parseInt(field.max, 10);
+            if (count >= maxVal) {
+              btnAddEntry.disabled = true;
+              btnAddEntry.title = `Limite maximale de ${maxVal} entrée(s) atteinte`;
+              btnAddEntry.textContent = 'Quantité max atteinte';
+            } else {
+              btnAddEntry.disabled = false;
+              btnAddEntry.title = '';
+              btnAddEntry.textContent = 'Ajouter une entrée';
+            }
+          }
+        };
 
         let entryIndex = 0;
         const createEntryRow = (entryName = '', initialVal = null, insertAfterEl = null) => {
@@ -672,6 +751,7 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
             setTimeout(() => {
               entryCard.remove();
               updateEmptyState();
+              checkObjectConstraints();
               updateLiveOutput();
             }, 180);
           });
@@ -688,6 +768,13 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
           `;
 
           btnDuplicate.addEventListener('click', () => {
+            if (hasMax) {
+              const maxVal = parseInt(field.max, 10);
+              if (entriesList.children.length >= maxVal) {
+                alert(`Limite maximale de ${maxVal} entrée(s) atteinte. Impossible de dupliquer.`);
+                return;
+              }
+            }
             const entryKey = keyInput.value.trim();
             const duplicatedKey = entryKey ? `${entryKey}_copy` : '';
             const entryValue = {};
@@ -703,6 +790,7 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
               });
             }
             createEntryRow(duplicatedKey, entryValue, entryCard);
+            checkObjectConstraints();
             updateLiveOutput();
           });
 
@@ -800,8 +888,11 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
           });
         }
 
+        checkObjectConstraints();
+
         btnAddEntry.addEventListener('click', () => {
           createEntryRow();
+          checkObjectConstraints();
           updateLiveOutput();
         });
 
@@ -832,7 +923,7 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
       }
       break;
 
-    case 'array':
+    case 'array': {
       const hasChoices = field.options || field.optionsFrom || field.optionsUrl;
       if (hasChoices) {
         const checklistContainer = document.createElement('div');
@@ -901,6 +992,56 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
 
         const finalVal = cachedVal !== undefined ? cachedVal : (field.default !== undefined ? field.default : []);
 
+        const hasMin = field.min !== undefined && field.min !== null && field.min !== '';
+        const hasMax = field.max !== undefined && field.max !== null && field.max !== '';
+
+        let errEl = null;
+        if (hasMin) {
+          errEl = document.createElement('span');
+          errEl.className = 'field-validation-error';
+          errEl.setAttribute('aria-live', 'polite');
+          errEl.style.display = 'none';
+          formGroup.appendChild(errEl);
+        }
+
+        const checkChecklistConstraints = () => {
+          const checkedBoxes = checklistContainer.querySelectorAll('input[type="checkbox"]:checked');
+          const count = checkedBoxes.length;
+
+          if (hasMin && errEl) {
+            const minVal = parseInt(field.min, 10);
+            if (count < minVal) {
+              errEl.textContent = `Le nombre d'éléments doit être d'au moins ${minVal} (actuellement ${count})`;
+              errEl.style.display = 'block';
+            } else {
+              errEl.style.display = 'none';
+            }
+          }
+
+          if (hasMax) {
+            const maxVal = parseInt(field.max, 10);
+            const allBoxes = checklistContainer.querySelectorAll('input[type="checkbox"]');
+            if (count >= maxVal) {
+              allBoxes.forEach(cb => {
+                if (!cb.checked) {
+                  cb.disabled = true;
+                }
+              });
+            } else {
+              allBoxes.forEach(cb => {
+                cb.disabled = false;
+              });
+            }
+          }
+        };
+
+        checklistContainer.checkConstraints = checkChecklistConstraints;
+        checklistContainer.addEventListener('change', (e) => {
+          if (e.target && e.target.type === 'checkbox') {
+            checkChecklistConstraints();
+          }
+        });
+
         if (field.optionsUrl) {
           itemsWrapper.innerHTML = '<div class="loading-text" style="color: var(--color-text-muted); font-size: 14px;">Chargement des options...</div>';
           loadOptionsFromUrl(field.optionsUrl, checklistContainer, finalVal);
@@ -909,6 +1050,8 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
         } else if (field.options) {
           populateChecklistChoices(checklistContainer, field.options, finalVal);
         }
+
+        checkChecklistConstraints();
 
         formGroup.appendChild(checklistContainer);
         break;
@@ -932,6 +1075,55 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
         </svg>
         Ajouter un élément
       `;
+
+      const hasMin = field.min !== undefined && field.min !== null && field.min !== '';
+      const hasMax = field.max !== undefined && field.max !== null && field.max !== '';
+
+      let errEl = null;
+      if (hasMin) {
+        errEl = document.createElement('span');
+        errEl.className = 'field-validation-error';
+        errEl.setAttribute('aria-live', 'polite');
+        errEl.style.display = 'none';
+        formGroup.appendChild(errEl);
+      }
+
+      const checkArrayConstraints = () => {
+        const count = itemsList.children.length;
+
+        if (hasMin && errEl) {
+          const minVal = parseInt(field.min, 10);
+          if (count < minVal) {
+            errEl.textContent = `Le nombre d'éléments doit être d'au moins ${minVal} (actuellement ${count})`;
+            errEl.style.display = 'block';
+          } else {
+            errEl.style.display = 'none';
+          }
+        }
+
+        if (hasMax) {
+          const maxVal = parseInt(field.max, 10);
+          if (count >= maxVal) {
+            btnAdd.disabled = true;
+            btnAdd.title = `Limite maximale de ${maxVal} élément(s) atteinte`;
+            btnAdd.innerHTML = `
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Quantité max atteinte
+            `;
+          } else {
+            btnAdd.disabled = false;
+            btnAdd.title = '';
+            btnAdd.innerHTML = `
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Ajouter un élément
+            `;
+          }
+        }
+      };
 
       // Handle array items creation
       let itemIndex = 0;
@@ -962,6 +1154,7 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
             updateEmptyState();
             updateAllItemTitles();
             updateArrayItemNames(itemsList, fieldPath);
+            checkArrayConstraints();
             updateLiveOutput();
           }, 180);
         });
@@ -978,6 +1171,13 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
         `;
 
         btnDuplicate.addEventListener('click', () => {
+          if (hasMax) {
+            const maxVal = parseInt(field.max, 10);
+            if (itemsList.children.length >= maxVal) {
+              alert(`Limite maximale de ${maxVal} élément(s) atteinte. Impossible de dupliquer.`);
+              return;
+            }
+          }
           let itemVal = null;
           if (field.itemType === 'object') {
             itemVal = {};
@@ -1006,6 +1206,7 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
           createItemRow(itemVal, itemCard);
           updateAllItemTitles();
           updateArrayItemNames(itemsList, fieldPath);
+          checkArrayConstraints();
           updateLiveOutput();
         });
 
@@ -1151,9 +1352,12 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
         }
       }
 
+      checkArrayConstraints();
+
       btnAdd.addEventListener('click', () => {
         createItemRow();
         updateArrayItemNames(itemsList, fieldPath);
+        checkArrayConstraints();
         updateLiveOutput();
       });
 
@@ -1163,9 +1367,10 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
 
       updateEmptyState();
       break;
+    }
 
     case 'string':
-    default:
+    default: {
       const txtInput = document.createElement('input');
       txtInput.type = 'text';
       txtInput.className = 'form-control';
@@ -1176,41 +1381,71 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
       const finalTxtVal = cachedVal !== undefined ? cachedVal : (field.default !== undefined ? field.default : '');
       txtInput.value = finalTxtVal;
 
-      // Apply regex validation if defined
-      if (field.validation && field.validation.regex) {
-        txtInput.dataset.regexPattern = field.validation.regex;
-        const validationMsg = field.validation.message || `Format invalide (regex: ${field.validation.regex})`;
-        txtInput.dataset.regexMessage = validationMsg;
+      // Apply physical constraint for max length
+      if (field.max !== undefined && field.max !== null && field.max !== '') {
+        txtInput.setAttribute('maxlength', field.max);
+      }
 
+      const hasRegex = field.validation && field.validation.regex;
+      const hasMin = field.min !== undefined && field.min !== null && field.min !== '';
+
+      if (hasRegex || hasMin) {
         const errEl = document.createElement('span');
         errEl.className = 'field-validation-error';
         errEl.setAttribute('aria-live', 'polite');
         errEl.style.display = 'none';
-        errEl.textContent = validationMsg;
 
         const validateInput = () => {
-          if (txtInput.value === '') {
-            txtInput.classList.remove('input-invalid');
-            errEl.style.display = 'none';
-            return;
-          }
-          try {
-            const rx = new RegExp(field.validation.regex);
-            if (rx.test(txtInput.value)) {
+          const val = txtInput.value;
+          
+          if (val === '') {
+            if (!field.required) {
               txtInput.classList.remove('input-invalid');
               errEl.style.display = 'none';
-            } else {
-              txtInput.classList.add('input-invalid');
-              errEl.style.display = 'block';
+              errEl.textContent = '';
+              return;
+            } else if (!hasMin) {
+              txtInput.classList.remove('input-invalid');
+              errEl.style.display = 'none';
+              errEl.textContent = '';
+              return;
             }
-          } catch (e) {
-            // invalid regex pattern — ignore silently
           }
+
+          // Check min length
+          if (hasMin) {
+            const minVal = parseInt(field.min, 10);
+            if (val.length < minVal) {
+              txtInput.classList.add('input-invalid');
+              errEl.textContent = `La longueur doit être d'au moins ${minVal} caractères (actuellement ${val.length})`;
+              errEl.style.display = 'block';
+              return;
+            }
+          }
+
+          // Check regex
+          if (hasRegex) {
+            try {
+              const rx = new RegExp(field.validation.regex);
+              if (!rx.test(val)) {
+                txtInput.classList.add('input-invalid');
+                errEl.textContent = field.validation.message || `Format invalide (regex: ${field.validation.regex})`;
+                errEl.style.display = 'block';
+                return;
+              }
+            } catch (e) {
+              // invalid regex pattern — ignore silently
+            }
+          }
+
+          // Valid
+          txtInput.classList.remove('input-invalid');
+          errEl.style.display = 'none';
+          errEl.textContent = '';
         };
 
         txtInput.addEventListener('input', validateInput);
         txtInput.addEventListener('change', validateInput);
-        // Run immediately for pre-filled values
         validateInput();
 
         formGroup.appendChild(txtInput);
@@ -1219,6 +1454,7 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
         formGroup.appendChild(txtInput);
       }
       break;
+    }
   }
 
   return formGroup;
@@ -1828,16 +2064,25 @@ function populateFieldElement(formGroup, field, value) {
   switch (field.type) {
     case 'boolean':
       const cb = formGroup.querySelector('input[type="checkbox"]');
-      if (cb) cb.checked = !!value;
+      if (cb) {
+        cb.checked = !!value;
+        cb.dispatchEvent(new Event('change'));
+      }
       break;
     case 'select':
       const sel = formGroup.querySelector('select');
-      if (sel) sel.value = String(value);
+      if (sel) {
+        sel.value = String(value);
+        sel.dispatchEvent(new Event('change'));
+      }
       break;
     case 'integer':
     case 'number':
       const numInput = formGroup.querySelector('input[type="number"]');
-      if (numInput) numInput.value = value;
+      if (numInput) {
+        numInput.value = value;
+        numInput.dispatchEvent(new Event('change'));
+      }
       break;
     case 'object':
       if (field.dynamicKeys) {
@@ -1901,6 +2146,9 @@ function populateFieldElement(formGroup, field, value) {
             cb.checked = valuesArray.includes(String(cb.value));
           });
         }
+        if (typeof checklistContainer.checkConstraints === 'function') {
+          checklistContainer.checkConstraints();
+        }
         break;
       }
 
@@ -1957,7 +2205,10 @@ function populateFieldElement(formGroup, field, value) {
     case 'string':
     default:
       const txtInput = formGroup.querySelector('input[type="text"]');
-      if (txtInput) txtInput.value = String(value);
+      if (txtInput) {
+        txtInput.value = String(value);
+        txtInput.dispatchEvent(new Event('input'));
+      }
       break;
   }
 }
@@ -2340,6 +2591,10 @@ function populateChecklistChoices(checklistContainer, choices, selectedValues) {
         label.style.display = 'none';
       }
     });
+  }
+
+  if (typeof checklistContainer.checkConstraints === 'function') {
+    checklistContainer.checkConstraints();
   }
 }
 

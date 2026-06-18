@@ -446,6 +446,8 @@ Chaque élément du tableau `fields` comporte les propriétés suivantes :
 | `keyLabel` | `string` | Optionnel | Libellé du champ utilisé pour saisir la clé d'un objet dynamique. |
 | `validation` | `object` | Optionnel | Règles de validation. Supporté pour les champs de type `string` (voir ci-dessous). |
 | `condition` | `string` | Optionnel | Expression JavaScript définissant la condition d'affichage du champ (ex: `enable_ssl == true`). Supporte les opérateurs logiques (`&&`, `||`, `!`) et les chemins relatifs (ex: `../enable_ssl`). |
+| `min` | `number` | Optionnel | Limite minimale. Valide la longueur (pour `string`), la valeur numérique (pour `integer`/`number`), ou le nombre d'éléments/entrées (pour `array` et `object` dynamique). |
+| `max` | `number` | Optionnel | Limite maximale. Valide la longueur (pour `string`), la valeur numérique (pour `integer`/`number`), ou le nombre d'éléments/entrées (pour `array` et `object` dynamique). |
 
 ---
 
@@ -525,6 +527,45 @@ fields:
 | :--- | :--- | :--- |
 | `regex` | `string` | **Requis** | Le motif regex de validation (ex: `^[a-z0-9-]+$`). Attention à doubler les antislashs en YAML/JSON (`\\`). |
 | `message` | `string` | Optionnel | Le message d'erreur affiché en rouge sous le champ lorsque la regex échoue. |
+
+---
+
+#### Validation de valeur, longueur et quantité (`min` / `max`)
+
+Il est possible de contraindre les valeurs saisies, la longueur du texte ou le nombre d'éléments/options à l'aide des propriétés `min` et `max` :
+
+| Type de champ | Rôle de `min` | Rôle de `max` | Comportement UI / Validation |
+| :--- | :--- | :--- | :--- |
+| `string` | Longueur minimale du texte | Longueur maximale du texte | Une erreur s'affiche si le texte est trop court. L'attribut HTML `maxlength` empêche physiquement de saisir un texte dépassant `max`. |
+| `integer` / `number` | Valeur numérique minimale | Valeur numérique maximale | La valeur saisie est automatiquement limitée (clamped) dans l'intervalle défini lors de la saisie ou de la perte de focus. |
+| `array` (liste) | Nombre minimum d'éléments | Nombre maximum d'éléments | Une erreur s'affiche si le nombre d'éléments est inférieur à `min`. Le bouton "Ajouter un élément" est désactivé et les duplications sont bloquées une fois la limite `max` atteinte. |
+| `array` (checklist) | Nombre minimum d'options cochées | Nombre maximum d'options cochées | Une erreur s'affiche si trop peu de cases sont cochées. Les cases non cochées sont désactivées pour empêcher de dépasser `max`. |
+| `object` (clé dynamique) | Nombre minimum d'entrées | Nombre maximum d'entrées | Une erreur s'affiche si le nombre d'entrées est inférieur à `min`. Le bouton "Ajouter une entrée" est désactivé une fois la limite `max` atteinte. |
+
+##### Exemple YAML :
+```yaml
+fields:
+  - name: replica_count
+    label: "Nombre d'instances"
+    type: integer
+    min: 1
+    max: 5
+    default: 3
+
+  - name: environment_variables
+    label: "Variables d'environnement"
+    type: array
+    itemType: object
+    min: 2
+    max: 4
+    fields:
+      - name: name
+        type: string
+        required: true
+      - name: value
+        type: string
+        required: true
+```
 
 ---
 

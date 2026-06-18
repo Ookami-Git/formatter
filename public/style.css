@@ -204,6 +204,16 @@ body {
   box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
 }
 
+.btn:disabled {
+  background-color: var(--color-secondary) !important;
+  border-color: var(--border-color) !important;
+  color: var(--text-muted) !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+  opacity: 0.6;
+}
+
 .icon {
   width: 16px;
   height: 16px;
