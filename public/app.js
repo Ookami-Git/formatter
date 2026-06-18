@@ -1761,7 +1761,19 @@ function updateLiveOutput() {
     formData = extractFormData();
   }
 
-  // Clean empty values if checkbox is not checked
+  // ── Moteur d'abstraction Input → Output ─────────────────────────────────
+  // Si le schéma définit un `outputTemplate`, on transforme les données brutes
+  // du formulaire en une structure cible complètement dissociée.
+  // Si `outputTemplate` est absent, le comportement est identique à avant.
+  const _activeSchemaForTransform = isMultiDoc ? appSchema[activeTabIndex].schema : appSchema;
+  if (_activeSchemaForTransform && _activeSchemaForTransform.outputTemplate) {
+    try {
+      formData = transformOutput(formData, _activeSchemaForTransform.outputTemplate);
+    } catch (transformErr) {
+      console.error('[TransformEngine] Échec de la transformation, utilisation des données brutes :', transformErr);
+    }
+  }
+  // ────────────────────────────────────────────────────────────────────────
   if (elChkKeepEmpty && !elChkKeepEmpty.checked) {
     formData = cleanEmptyValues(formData);
   }

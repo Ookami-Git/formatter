@@ -422,6 +422,7 @@ Un schéma de configuration valide est constitué d'un objet racine contenant le
 | `title` | `string` | Le titre principal affiché en haut du formulaire. |
 | `description` | `string` | Un texte explicatif affiché sous le titre (supporte le HTML basique). |
 | `outputFormat` | `string` | Format de sortie présélectionné par défaut (`json`, `yaml`, `hcl`). |
+| `outputTemplate` | `object` | Optionnel. Gabarit déclaratif pour restructurer et transformer les données du formulaire en sortie. |
 | `fields` | `array` | Liste des définitions de champs composant le formulaire. |
 
 ---
@@ -438,7 +439,7 @@ Chaque élément du tableau `fields` comporte les propriétés suivantes :
 | `description` | `string` | Optionnel | Description d'aide ou tooltip affiché sous le champ de saisie. |
 | `required` | `boolean` | Optionnel | Rend le champ obligatoire (ajoute un astérisque rouge et bloque la validation). |
 | `default` | `any` | Optionnel | Valeur par défaut préremplie dans le formulaire au chargement. |
-| `options` | `array` | Requis si `select` | Liste d'options sous la forme simple `["dev", "prod"]` ou d'objets `[{"value": "dev", "label": "Développement"}]`. |
+| `options` | `array` | Requis si `select` | Liste d'options sous la forme simple `["dev", "prod"]` ou d'objets `[`{"value": "dev", "label": "Développement"}`]`. |
 | `optionsFrom` | `string` | Optionnel | Chemin vers une autre valeur/collection existante dans le schéma (`/subnets`, `../add_volumes`). Utilisé pour remplir dynamiquement un `select`. |
 | `itemType` | `string` | Requis si `array` | Type des éléments du tableau (`string`, `integer`, `number`, `boolean`, `object`). |
 | `fields` | `array` | Requis si `object` (ou `array` d'objets) | Liste récursive des sous-champs composant la structure imbriquée. |
@@ -448,6 +449,81 @@ Chaque élément du tableau `fields` comporte les propriétés suivantes :
 | `condition` | `string` | Optionnel | Expression JavaScript définissant la condition d'affichage du champ (ex: `enable_ssl == true`). Supporte les opérateurs logiques (`&&`, `||`, `!`) et les chemins relatifs (ex: `../enable_ssl`). |
 | `min` | `number` | Optionnel | Limite minimale. Valide la longueur (pour `string`), la valeur numérique (pour `integer`/`number`), ou le nombre d'éléments/entrées (pour `array` et `object` dynamique). |
 | `max` | `number` | Optionnel | Limite maximale. Valide la longueur (pour `string`), la valeur numérique (pour `integer`/`number`), ou le nombre d'éléments/entrées (pour `array` et `object` dynamique). |
+
+---
+
+#### 🔄 Gabarit de Sortie et Moteur d'abstraction (`outputTemplate`)
+
+Par défaut, si la propriété `outputTemplate` est absente du schéma, l'application génère un document de sortie calqué directement sur les valeurs brutes saisies dans le formulaire (Input = Output).
+
+L'ajout d'un `outputTemplate` à la racine de votre schéma permet de **dissocier complètement** la structure des données d'entrée (le formulaire) du document final généré (l'Output). Le moteur de transformation traite le template de façon récursive pour interpoler les variables, évaluer les conditions et générer des boucles complexes.
+
+##### Directives supportées dans le gabarit
+
+Les directives de transformation s'écrivent sous la forme de clés préfixées par `$` dans les objets du template :
+
+| Directive | Type de valeur | Description |
+| :--- | :--- | :--- |
+| `$repeat` | `string` \| `number` | Spécifie le nombre de répétitions/itérations. Peut être un nombre brut (ex: `3`), un nom de champ (ex: `worker_count`), ou une expression d'évaluation (ex: `"${worker_count + 1}"`). |
+| `$item` | `any` | **Requis avec `$repeat`**. Modèle d'objet (ou valeur simple) à instancier à chaque itération. |
+| `$key` | `string` | **Optionnel avec `$repeat`**. Si fourni, l'itération génère un **objet/dictionnaire** au lieu d'un tableau. La clé de chaque propriété est évaluée dynamiquement selon ce template (ex: `vm-${_index + 1}`). |
+| `$if` | `string` \| `boolean` | Condition d'inclusion ou de visibilité du bloc. L'expression est évaluée et le bloc n'est conservé que si le résultat est *truthy*. |
+| `$then` | `any` | **Requis avec `$if`**. La valeur ou structure à injecter si la condition `$if` est vraie. |
+| `$else` | `any` | **Optionnel avec `$if`**. La valeur ou structure à injecter si la condition `$if` est fausse. Si non spécifié, la clé parente est tout simplement omise de l'objet final. |
+| `$value` | `string` | Évalue directement une expression JavaScript complexe et retourne sa valeur brute (pour des calculs ou affectations directes). |
+
+##### Évaluation et Interpolation d'expressions (`${expr}`)
+
+Toutes les chaînes de caractères contenant `${...}` sont interpolées dynamiquement en tant qu'expressions JavaScript dans le contexte des données du formulaire :
+- **Accès direct aux champs** : `${env}`, `${project_name}`
+- **Accès imbriqué (dot notation)** : `${disque_supplementaire.taille_go}`
+- **Opérations arithmétiques** : `${worker_count * vm_cpu}`
+- **Opérateurs ternaires** : `${_index === 0 ? 'primary' : 'worker'}`
+
+> [!TIP]
+> **Préservation des types** : Si la chaîne de caractères entière est constituée d'une seule expression (ex: `"${worker_count}"`), le type natif (nombre, booléen, etc.) est conservé dans le document final généré au lieu d'être converti en chaîne de caractères.
+
+##### Variables de boucle spéciales (dans `$repeat`)
+
+Au sein du bloc `$item` (et de la clé `$key`), deux variables de boucle sont injectées dans le contexte d'évaluation :
+- `_index` : Index 0-based de l'itération courante (0, 1, 2...).
+- `_count` : Nombre total d'itérations programmées dans la boucle.
+
+##### Exemple de schéma avec `outputTemplate`
+
+```yaml
+title: "Cluster Virtuel"
+outputFormat: "yaml"
+
+outputTemplate:
+  cluster_name: "${env}-${project_name}"
+  
+  # Génération d'une liste (tableau) de serveurs
+  vms:
+    $repeat: worker_count
+    $item:
+      name: "${env}-${project_name}-vm${_index + 1}"
+      role: "${_index === 0 ? 'primary' : 'worker'}"
+      cpu: "${vm_cpu}"
+      
+      # Bloc inclus conditionnellement si disque_supplementaire n'est pas vide
+      extra_disk:
+        $if: disque_supplementaire
+        $then:
+          size_gb: "${disque_supplementaire.taille_go}"
+          type: "${disque_supplementaire.type_disque}"
+
+  # Génération d'une map (dictionnaire) dynamique via $key
+  vms_by_key:
+    $repeat: worker_count
+    $key: "vm-${_index + 1}"
+    $item:
+      role: "${_index === 0 ? 'primary' : 'replica'}"
+
+  # Calculs globaux
+  metrics:
+    total_cpu: "${worker_count * vm_cpu}"
+```
 
 ---
 

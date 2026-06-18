@@ -1,0 +1,145 @@
+title: "Cluster de VMs — Démonstration du moteur d'abstraction"
+description: >
+  Ce schéma illustre les 3 fonctionnalités du moteur d'abstraction Input→Output :
+  itération, nommage dynamique et héritage conditionnel.
+  L'Output généré est un cluster de VMs complet, dissocié des champs du formulaire.
+outputFormat: "yaml"
+
+# ============================================================
+# OUTPUT TEMPLATE — Structure cible complètement dissociée
+# ============================================================
+#
+# Directives disponibles :
+#   $repeat : "field_name"      → itère N fois (valeur du champ)
+#   $item   : { ... }           → template d'un élément itéré
+#   $key    : "${expr}"         → (optionnel) clé de chaque item si on veut un dict
+#   $if     : "field_name"      → inclusion conditionnelle (truthy = inclus)
+#   $then   : { ... }           → bloc inclus si $if est vrai
+#   $else   : { ... }           → bloc inclus si $if est faux (optionnel)
+#   ${expr}                     → interpolation d'expression JS dans les strings
+#
+# Variables d'itération :
+#   $_index → index 0-based de l'itération courante
+#   $_count → nombre total d'itérations
+
+outputTemplate:
+  cluster_name: "${env}-${project_name}"
+  environment: "${env}"
+  region: "${region}"
+
+  # Itération : génère `worker_count` objets dans le tableau `vms`
+  vms:
+    $repeat: worker_count     # Valeur prise depuis le champ Input `worker_count`
+    $item:
+      # Nommage dynamique : construit le nom de la VM depuis l'index et les variables
+      name: "${env}-${project_name}-vm${_index + 1}"
+      role: "${_index === 0 ? 'primary' : 'worker'}"
+      cpu: "${vm_cpu}"
+      ram_gb: "${vm_ram}"
+
+      # Héritage conditionnel : injecte le bloc disque UNIQUEMENT si le champ est actif
+      extra_disk:
+        $if: disque_supplementaire      # Truthy si l'objet n'est pas vide
+        $then:
+          size_gb: "${disque_supplementaire.taille_go}"
+          type: "${disque_supplementaire.type_disque}"
+          mount_point: "${disque_supplementaire.point_montage}"
+
+      # Tags calculés dynamiquement
+      tags:
+        - "${env}"
+        - "${project_name}"
+        - "vm${_index + 1}"
+        - "${_index === 0 ? 'primary' : 'replica'}"
+
+  # Métadonnées calculées à partir des champs
+  metadata:
+    total_vms: "${worker_count}"
+    total_cpu: "${worker_count * vm_cpu}"
+    total_ram_gb: "${worker_count * vm_ram}"
+    generated_at: "auto"
+
+# ============================================================
+# FIELDS — Champs du formulaire (dissociés de l'Output)
+# ============================================================
+fields:
+  - name: project_name
+    label: "Nom du projet"
+    type: "string"
+    default: "monprojet"
+    required: true
+    description: "Identifiant du projet, utilisé dans les noms générés."
+    validation:
+      regex: "^[a-z][a-z0-9-]*$"
+      message: "Minuscules, chiffres et tirets uniquement."
+
+  - name: env
+    label: "Environnement"
+    type: "select"
+    default: "dev"
+    required: true
+    options: ["dev", "staging", "prod"]
+    description: "Environnement cible. Influence les noms et les configurations."
+
+  - name: region
+    label: "Région de déploiement"
+    type: "select"
+    default: "eu-west-1"
+    options: ["eu-west-1", "eu-central-1", "us-east-1", "ap-southeast-1"]
+    description: "Région cloud cible pour le cluster."
+
+  - name: worker_count
+    label: "Nombre de VMs"
+    type: "integer"
+    default: 3
+    required: true
+    min: 1
+    max: 10
+    description: "Nombre de machines virtuelles à générer. Le moteur itérera N fois pour créer N objets VM dans l'Output."
+
+  - name: vm_cpu
+    label: "vCPUs par VM"
+    type: "integer"
+    default: 4
+    min: 1
+    max: 64
+    description: "Nombre de vCPUs alloués à chaque VM."
+
+  - name: vm_ram
+    label: "RAM par VM (Go)"
+    type: "integer"
+    default: 16
+    min: 2
+    max: 512
+    description: "Quantité de RAM en Go allouée à chaque VM."
+
+  - name: disque_supplementaire
+    label: "Disque de données supplémentaire"
+    type: "object"
+    description: >
+      Si ce bloc est configuré (non vide), le moteur d'abstraction l'injectera
+      automatiquement dans chaque VM générée par l'itération.
+    fields:
+      - name: taille_go
+        label: "Taille (Go)"
+        type: "integer"
+        default: 100
+        min: 10
+        max: 10000
+        description: "Taille du disque supplémentaire en gigaoctets."
+
+      - name: type_disque
+        label: "Type de disque"
+        type: "select"
+        default: "ssd"
+        options: ["ssd", "nvme", "hdd"]
+        description: "Type de disque : SSD, NVMe haute performance ou HDD magnétique."
+
+      - name: point_montage
+        label: "Point de montage"
+        type: "string"
+        default: "/data"
+        description: "Chemin de montage du disque dans la VM."
+        validation:
+          regex: "^/[a-zA-Z0-9/_-]*$"
+          message: "Doit être un chemin absolu valide (commence par /)."
