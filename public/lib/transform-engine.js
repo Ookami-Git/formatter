@@ -9,9 +9,11 @@
  *   $repeat   — itère N fois (valeur d'un champ Input ou entier littéral)
  *   $item     — template d'un élément d'itération (utilisé avec $repeat)
  *   $key      — (optionnel) nom dynamique de la clé de chaque itération
+ *   $merge    — fusionne un tableau de blocs (objets ou $repeat) en un seul dict
  *   $if       — condition d'inclusion d'un bloc (expression ou nom de champ)
  *   $then     — valeur à inclure si la condition est vraie
  *   $else     — valeur à inclure si la condition est fausse (optionnel)
+ *   $value    — résolution directe d'une expression
  *   ${expr}   — interpolation d'expression dans les chaînes de caractères
  *
  * Variables disponibles dans les expressions d'interpolation :
@@ -19,6 +21,7 @@
  *   - $_index  : index 0-based de l'itération courante
  *   - $_count  : nombre total d'itérations
  *   - Accès imbriqué : ${disque_supplementaire.size}
+ *   - Accès tableau  : ${lb_tools_az[_index % lb_tools_az.length]}
  *
  * @param {Object} formData       — Données brutes extraites du formulaire
  * @param {Object} outputTemplate — Template déclaratif issu du schéma
@@ -70,6 +73,11 @@ function processNode(node, context) {
     // Directive $repeat : itération
     if ('$repeat' in node) {
       return resolveIterator(node, context);
+    }
+
+    // Directive $merge : fusion de plusieurs blocs en un seul dictionnaire plat
+    if ('$merge' in node) {
+      return resolveMerge(node, context);
     }
 
     // Directive $if : inclusion conditionnelle
@@ -163,6 +171,45 @@ function resolveIterator(node, context) {
     }
     return result;
   }
+}
+
+/**
+ * Résout une directive $merge.
+ *
+ * Fusionne un tableau de blocs (chacun pouvant être un $repeat ou un objet
+ * ordinaire) en un seul dictionnaire plat. Utile pour combiner plusieurs
+ * boucles d'itération dans un même objet de sortie.
+ *
+ * Format :
+ *   $merge:
+ *     - $repeat: fieldName
+ *       $key: "${expr}"
+ *       $item: { ... }
+ *     - $repeat: otherField
+ *       $key: "${expr}"
+ *       $item: { ... }
+ *
+ * @param {Object} node    — Nœud contenant $merge (tableau de blocs)
+ * @param {Object} context — Contexte courant
+ * @returns {Object}       — Dictionnaire fusionné
+ */
+function resolveMerge(node, context) {
+  const blocks = node.$merge;
+
+  if (!Array.isArray(blocks)) {
+    console.warn('[TransformEngine] $merge attend un tableau de blocs — ignoré');
+    return null;
+  }
+
+  const result = {};
+  for (const block of blocks) {
+    const resolved = processNode(block, context);
+    // On ne fusionne que les objets (dict de clés)
+    if (resolved !== null && resolved !== undefined && typeof resolved === 'object' && !Array.isArray(resolved)) {
+      Object.assign(result, resolved);
+    }
+  }
+  return result;
 }
 
 /**
@@ -345,5 +392,5 @@ function isTruthy(val) {
 
 // Export conditionnel : Node.js (tests) ou navigateur (global)
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { transformOutput, processNode, interpolateString, evaluate, resolvePath, isTruthy };
+  module.exports = { transformOutput, processNode, interpolateString, evaluate, resolvePath, isTruthy, resolveMerge };
 }
