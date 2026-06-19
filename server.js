@@ -389,6 +389,16 @@ async function loadSchemaData({ sourceType, localPath, gitRepoUrl, gitBranch, gi
     sourceLabel = resolvedPath;
   }
 
+  let resolvedConfigPath = '';
+  if (actualSourceType === 'git') {
+    resolvedConfigPath = (sourceType === 'default' && !gitConfigPath) ? GIT_CONFIG_PATH : gitConfigPath;
+  } else if (actualSourceType === 'local') {
+    const pathVal = (sourceType === 'default' && !localPath) ? CONFIG_PATH : localPath;
+    resolvedConfigPath = path.basename(pathVal);
+  } else {
+    resolvedConfigPath = 'values.yaml';
+  }
+
   const { data, format, isMultiDoc } = parseConfigContent(fileContent, resolvedPath);
 
   return {
@@ -399,6 +409,7 @@ async function loadSchemaData({ sourceType, localPath, gitRepoUrl, gitBranch, gi
     sourceType: actualSourceType,
     gitBranch: loadedGitBranch,
     format: format,
+    configPath: resolvedConfigPath,
     loadedAt: new Date().toISOString()
   };
 }
@@ -681,6 +692,291 @@ app.get('/api/mock-options', (req, res) => {
       "zone-1c": "Europe West 1-C"
     }
   });
+});
+
+// Ephemeral directory cleanup helper
+function deleteFolderRecursive(dirPath) {
+  if (fs.existsSync(dirPath)) {
+    try {
+      fs.rmSync(dirPath, { recursive: true, force: true });
+    } catch (err) {
+      console.warn(`[Cleanup] Failed to remove directory ${dirPath}:`, err.message);
+    }
+  }
+}
+
+// Endpoint to pull project config (POST)
+app.post('/api/sync/pull', async (req, res) => {
+  const { repoUrl, token, sourceBranch, targetPath } = req.body;
+  if (!repoUrl || !sourceBranch || !targetPath) {
+    return res.status(400).json({ success: false, error: 'Paramètres manquants : repoUrl, sourceBranch, et targetPath sont requis.' });
+  }
+
+  const pullId = crypto.randomBytes(16).toString('hex');
+  const tempDir = path.join(__dirname, 'git-repos', `pull-${pullId}`);
+
+  try {
+    let authRepoUrl = repoUrl;
+    if (token) {
+      const urlMatch = repoUrl.match(/^https?:\/\/([^@]+@)?(.+)$/);
+      if (!urlMatch || !urlMatch[1]) {
+        const isGitlab = repoUrl.includes('gitlab');
+        const protocol = repoUrl.startsWith('https') ? 'https' : 'http';
+        const hostAndPath = repoUrl.replace(/^https?:\/\//, '');
+        if (isGitlab) {
+          authRepoUrl = `${protocol}://oauth2:${token}@${hostAndPath}`;
+        } else {
+          authRepoUrl = `${protocol}://${token}@${hostAndPath}`;
+        }
+      }
+    }
+
+    const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+    const gitProxyOpt = proxy ? `-c http.proxy="${proxy}"` : '';
+
+    fs.mkdirSync(tempDir, { recursive: true });
+    console.log(`[Git Pull] Ephemeral clone of ${maskGitUrl(repoUrl)} on branch ${sourceBranch}...`);
+
+    let cloneSuccess = false;
+    try {
+      execSync(`git ${gitProxyOpt} clone --single-branch --branch "${sourceBranch}" --depth 1 "${authRepoUrl}" "${tempDir}"`, { stdio: 'ignore' });
+      cloneSuccess = true;
+    } catch (cloneErr) {
+      console.warn(`[Git Pull] Shallow clone failed, trying full clone: ${cloneErr.message}`);
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+        fs.mkdirSync(tempDir, { recursive: true });
+        execSync(`git ${gitProxyOpt} clone "${authRepoUrl}" "${tempDir}"`, { stdio: 'ignore' });
+        cloneSuccess = true;
+
+        if (fs.existsSync(path.join(tempDir, '.git'))) {
+          try {
+            execSync(`git checkout "${sourceBranch}"`, { cwd: tempDir, stdio: 'ignore' });
+          } catch (checkoutErr) {
+            console.warn(`[Git Pull] Checkout of ${sourceBranch} failed: ${checkoutErr.message}`);
+          }
+        }
+      } catch (fallbackErr) {
+        throw new Error(`Échec du clonage du dépôt Git : ${fallbackErr.message}`);
+      }
+    }
+
+    const cleanTargetPath = targetPath.replace(/^[\\/.]+/, '').replace(/\\/g, '/');
+    const targetFullPath = path.join(tempDir, cleanTargetPath);
+    const targetDirname = path.dirname(targetFullPath);
+    const abstractFullPath = path.join(targetDirname, '.formatter-abstract-values.yml');
+
+    let parsedData = null;
+    let mode = 'classic';
+
+    if (fs.existsSync(abstractFullPath)) {
+      console.log(`[Git Pull] Abstract values file found at ${abstractFullPath}`);
+      const fileContent = fs.readFileSync(abstractFullPath, 'utf8');
+      try {
+        parsedData = yaml.load(fileContent);
+        mode = 'abstract';
+      } catch (yamlErr) {
+        throw new Error(`Erreur de parsing de .formatter-abstract-values.yml : ${yamlErr.message}`);
+      }
+    } else if (fs.existsSync(targetFullPath)) {
+      console.log(`[Git Pull] Classic configuration file found at ${targetFullPath}`);
+      const fileContent = fs.readFileSync(targetFullPath, 'utf8');
+      try {
+        const parsed = parseConfigContent(fileContent, targetFullPath);
+        parsedData = parsed.data;
+        mode = 'classic';
+      } catch (parseErr) {
+        throw new Error(`Erreur de parsing du fichier cible ${targetPath} : ${parseErr.message}`);
+      }
+    } else {
+      console.log(`[Git Pull] Target path ${targetPath} does not exist in branch ${sourceBranch}`);
+      return res.json({
+        success: true,
+        data: {},
+        mode: 'none',
+        message: `Le fichier cible n'existe pas encore dans la branche ${sourceBranch}. Le formulaire reste vide.`
+      });
+    }
+
+    res.json({
+      success: true,
+      data: parsedData,
+      mode: mode
+    });
+
+  } catch (error) {
+    console.error(`[Git Pull] Error: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  } finally {
+    deleteFolderRecursive(tempDir);
+  }
+});
+
+// Endpoint to commit project config (POST)
+app.post('/api/sync/commit', async (req, res) => {
+  const { repoUrl, token, sourceBranch, destBranch, targetPath, content, abstractValues } = req.body;
+  if (!repoUrl || !sourceBranch || !destBranch || !targetPath || content === undefined) {
+    return res.status(400).json({ success: false, error: 'Paramètres manquants : repoUrl, sourceBranch, destBranch, targetPath, et content sont requis.' });
+  }
+
+  const commitId = crypto.randomBytes(16).toString('hex');
+  const tempDir = path.join(__dirname, 'git-repos', `commit-${commitId}`);
+
+  try {
+    let authRepoUrl = repoUrl;
+    if (token) {
+      const urlMatch = repoUrl.match(/^https?:\/\/([^@]+@)?(.+)$/);
+      if (!urlMatch || !urlMatch[1]) {
+        const isGitlab = repoUrl.includes('gitlab');
+        const protocol = repoUrl.startsWith('https') ? 'https' : 'http';
+        const hostAndPath = repoUrl.replace(/^https?:\/\//, '');
+        if (isGitlab) {
+          authRepoUrl = `${protocol}://oauth2:${token}@${hostAndPath}`;
+        } else {
+          authRepoUrl = `${protocol}://${token}@${hostAndPath}`;
+        }
+      }
+    }
+
+    const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+    const gitProxyOpt = proxy ? `-c http.proxy="${proxy}"` : '';
+
+    fs.mkdirSync(tempDir, { recursive: true });
+    console.log(`[Git Commit] Ephemeral clone of ${maskGitUrl(repoUrl)} on branch ${sourceBranch}...`);
+
+    let clonedSuccessfully = false;
+    let isRepoEmpty = false;
+    try {
+      execSync(`git ${gitProxyOpt} clone --single-branch --branch "${sourceBranch}" --depth 1 "${authRepoUrl}" "${tempDir}"`, { stdio: 'ignore' });
+      clonedSuccessfully = true;
+    } catch (cloneErr) {
+      console.warn(`[Git Commit] Shallow clone of branch ${sourceBranch} failed, trying full clone: ${cloneErr.message}`);
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+        fs.mkdirSync(tempDir, { recursive: true });
+        execSync(`git ${gitProxyOpt} clone "${authRepoUrl}" "${tempDir}"`, { stdio: 'ignore' });
+        clonedSuccessfully = true;
+
+        try {
+          execSync(`git log -1`, { cwd: tempDir, stdio: 'ignore' });
+        } catch (e) {
+          isRepoEmpty = true;
+        }
+      } catch (fallbackErr) {
+        throw new Error(`Échec du clonage du dépôt Git : ${fallbackErr.message}`);
+      }
+    }
+
+    if (isRepoEmpty) {
+      console.log(`[Git Commit] Repository is empty. Creating branch ${destBranch}...`);
+      execSync(`git checkout -b "${destBranch}"`, { cwd: tempDir, stdio: 'ignore' });
+    } else {
+      if (destBranch !== sourceBranch) {
+        console.log(`[Git Commit] Branching from ${sourceBranch} to ${destBranch}...`);
+        try {
+          execSync(`git checkout -b "${destBranch}"`, { cwd: tempDir, stdio: 'ignore' });
+        } catch (branchErr) {
+          console.warn(`[Git Commit] Branch ${destBranch} already exists locally, checking out and resetting: ${branchErr.message}`);
+          execSync(`git checkout "${destBranch}"`, { cwd: tempDir, stdio: 'ignore' });
+          execSync(`git reset --hard origin/${sourceBranch}`, { cwd: tempDir, stdio: 'ignore' });
+        }
+      } else {
+        console.log(`[Git Commit] Staying on branch ${sourceBranch}...`);
+      }
+    }
+
+    const cleanTargetPath = targetPath.replace(/^[\\/.]+/, '').replace(/\\/g, '/');
+    const targetFullPath = path.join(tempDir, cleanTargetPath);
+    const targetDirname = path.dirname(targetFullPath);
+    fs.mkdirSync(targetDirname, { recursive: true });
+
+    fs.writeFileSync(targetFullPath, content, 'utf8');
+    console.log(`[Git Commit] Wrote target configuration file to ${targetFullPath}`);
+
+    let filesToCommit = [cleanTargetPath];
+
+    if (abstractValues && typeof abstractValues === 'object' && Object.keys(abstractValues).length > 0) {
+      const abstractFullPath = path.join(targetDirname, '.formatter-abstract-values.yml');
+      const abstractYaml = yaml.dump(abstractValues, { indent: 2 });
+      fs.writeFileSync(abstractFullPath, abstractYaml, 'utf8');
+      console.log(`[Git Commit] Wrote abstract values file to ${abstractFullPath}`);
+
+      const relativeAbstractPath = path.relative(tempDir, abstractFullPath).replace(/\\/g, '/');
+      filesToCommit.push(relativeAbstractPath);
+    }
+
+    execSync(`git config user.name "Form Generator"`, { cwd: tempDir, stdio: 'ignore' });
+    execSync(`git config user.email "form-generator@local"`, { cwd: tempDir, stdio: 'ignore' });
+
+    for (const file of filesToCommit) {
+      execSync(`git add "${file}"`, { cwd: tempDir, stdio: 'ignore' });
+    }
+
+    let hasChanges = true;
+    try {
+      execSync(`git diff --cached --exit-code`, { cwd: tempDir, stdio: 'ignore' });
+      hasChanges = false;
+    } catch (diffErr) {
+      hasChanges = true;
+    }
+
+    if (hasChanges) {
+      execSync(`git commit -m "update: configuration updated via dynamic form"`, { cwd: tempDir, stdio: 'ignore' });
+      console.log(`[Git Commit] Committed changes.`);
+    } else {
+      console.log(`[Git Commit] No changes detected. Pushing HEAD anyway.`);
+    }
+
+    let pushCmd = `git ${gitProxyOpt} push`;
+    if (destBranch === 'feature/form-update') {
+      pushCmd += ` --force origin "${destBranch}"`;
+    } else {
+      pushCmd += ` origin "${destBranch}"`;
+    }
+
+    if (isRepoEmpty) {
+      pushCmd = `git ${gitProxyOpt} push -u origin "${destBranch}"`;
+    }
+
+    console.log(`[Git Commit] Pushing to branch ${destBranch}...`);
+    execSync(pushCmd, { cwd: tempDir, stdio: 'ignore' });
+    console.log(`[Git Commit] Push successful!`);
+
+    let webUrl = repoUrl.replace(/(https?:\/\/)([^@]+@)?/, '$1').replace(/\.git$/, '');
+    let mergeRequestUrl = '';
+    let pushedDirectly = (destBranch === sourceBranch);
+
+    if (!pushedDirectly) {
+      if (webUrl.includes('gitlab')) {
+        mergeRequestUrl = `${webUrl}/-/merge_requests/new?merge_request[source_branch]=${encodeURIComponent(destBranch)}&merge_request[target_branch]=${encodeURIComponent(sourceBranch)}`;
+      } else if (webUrl.includes('github')) {
+        mergeRequestUrl = `${webUrl}/compare/${encodeURIComponent(sourceBranch)}...${encodeURIComponent(destBranch)}?expand=1`;
+      } else {
+        mergeRequestUrl = webUrl;
+      }
+    } else {
+      if (webUrl.includes('gitlab')) {
+        mergeRequestUrl = `${webUrl}/-/tree/${encodeURIComponent(destBranch)}`;
+      } else if (webUrl.includes('github')) {
+        mergeRequestUrl = `${webUrl}/tree/${encodeURIComponent(destBranch)}`;
+      } else {
+        mergeRequestUrl = webUrl;
+      }
+    }
+
+    res.json({
+      success: true,
+      pushedDirectly: pushedDirectly,
+      destBranch: destBranch,
+      mergeRequestUrl: mergeRequestUrl
+    });
+
+  } catch (error) {
+    console.error(`[Git Commit] Error: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  } finally {
+    deleteFolderRecursive(tempDir);
+  }
 });
 
 // Fallback to index.html for SPA

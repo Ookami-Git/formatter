@@ -1106,3 +1106,19 @@ code[class*="language-"] {
   display: none !important;
 }
 
+/* Git Sync Panel Styling */
+#btn-toggle-sync.active {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary-hover);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
+}
+
+.loading-spin {
+  animation: spin 1s linear infinite;
+}
+
+#git-sync-status a.status-link:hover {
+  text-decoration: underline !important;
+  color: #c7d2fe !important;
+}
+

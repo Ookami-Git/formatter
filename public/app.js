@@ -45,6 +45,7 @@ const formatButtons = [elFormatYaml, elFormatJson, elFormatHcl];
 // Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
   loadConfig(false);
+  initGitSyncUI();
 
   // Set up event listeners
   elBtnRefresh.addEventListener('click', () => {
@@ -175,6 +176,12 @@ async function loadConfig(forceRefresh = false) {
     updateAppHeader();
 
     elConfigPath.textContent = result.source;
+    if (result.configPath) {
+      const elSyncTargetPath = document.getElementById('sync-target-path');
+      if (elSyncTargetPath) {
+        elSyncTargetPath.value = result.configPath;
+      }
+    }
     updateFormatButtons();
 
     // Trigger initial generation of output
@@ -1737,34 +1744,16 @@ function cleanEmptyValues(obj) {
   return obj;
 }
 
-// Refresh code output panel
-function updateLiveOutput() {
-  if (!appSchema) return;
-
-  // Update conditional fields visibility first!
-  updateConditionalFields();
-
-  // Update collapsible previews and item titles
-  updateAllItemTitles();
-  updateCollapsePreviews();
-
-  // Update cache for the active tab with current values
-  if (isMultiDoc) {
-    tabDataCache[activeTabIndex] = extractFormData();
-  }
+// Helper to generate the text representation of the current form state
+function generateOutputText() {
+  if (!appSchema) return '';
 
   let formData = extractFormData();
   const selectsChanged = updateDynamicDropdowns(formData);
-  // If updateDynamicDropdowns changed select values programmatically,
-  // re-extract formData so the rendered output reflects the new selections.
   if (selectsChanged) {
     formData = extractFormData();
   }
 
-  // ── Moteur d'abstraction Input → Output ─────────────────────────────────
-  // Si le schéma définit un `outputTemplate`, on transforme les données brutes
-  // du formulaire en une structure cible complètement dissociée.
-  // Si `outputTemplate` est absent, le comportement est identique à avant.
   const _activeSchemaForTransform = isMultiDoc ? appSchema[activeTabIndex].schema : appSchema;
   if (_activeSchemaForTransform && _activeSchemaForTransform.outputTemplate) {
     try {
@@ -1773,7 +1762,7 @@ function updateLiveOutput() {
       console.error('[TransformEngine] Échec de la transformation, utilisation des données brutes :', transformErr);
     }
   }
-  // ────────────────────────────────────────────────────────────────────────
+
   if (elChkKeepEmpty && !elChkKeepEmpty.checked) {
     formData = cleanEmptyValues(formData);
   }
@@ -1793,7 +1782,6 @@ function updateLiveOutput() {
         break;
       case 'yaml':
       default:
-        // Use the loaded jsyaml library to dump
         formattedText = jsyaml.dump(formData, {
           indent: 2,
           noRefs: true,
@@ -1805,6 +1793,26 @@ function updateLiveOutput() {
     formattedText = `# Erreur de formatage : ${err.message}`;
   }
 
+  return formattedText;
+}
+
+// Refresh code output panel
+function updateLiveOutput() {
+  if (!appSchema) return;
+
+  // Update conditional fields visibility first!
+  updateConditionalFields();
+
+  // Update collapsible previews and item titles
+  updateAllItemTitles();
+  updateCollapsePreviews();
+
+  // Update cache for the active tab with current values
+  if (isMultiDoc) {
+    tabDataCache[activeTabIndex] = extractFormData();
+  }
+
+  const formattedText = generateOutputText();
   elCodeOutput.textContent = formattedText;
 
   // Highlight syntax using Prism
@@ -3183,4 +3191,219 @@ function updateConditionalFields() {
     }
   });
 }
+
+// ── Logic de Synchronisation Git ─────────────────────────────────────────────
+
+let gitSyncActive = false;
+
+function initGitSyncUI() {
+  const elBtnToggleSync = document.getElementById('btn-toggle-sync');
+  const elBtnCloseSync = document.getElementById('btn-close-sync');
+  const elGitSyncContainer = document.getElementById('git-sync-container');
+  const elSyncRepoUrl = document.getElementById('sync-repo-url');
+  const elBtnPull = document.getElementById('btn-git-pull');
+  const elBtnCommit = document.getElementById('btn-git-commit');
+
+  if (!elBtnToggleSync || !elGitSyncContainer) return;
+
+  // Prefill Repo URL from URL param ?repo=...
+  const urlParams = new URLSearchParams(window.location.search);
+  const repoParam = urlParams.get('repo');
+  if (repoParam) {
+    elSyncRepoUrl.value = repoParam;
+    toggleGitSyncMode(true);
+  }
+
+  // Toggle sync container
+  elBtnToggleSync.addEventListener('click', () => toggleGitSyncMode());
+  elBtnCloseSync.addEventListener('click', () => toggleGitSyncMode(false));
+
+  // Pull and Commit Actions
+  elBtnPull.addEventListener('click', handleGitPull);
+  elBtnCommit.addEventListener('click', handleGitCommit);
+}
+
+function toggleGitSyncMode(forceState = null) {
+  const elGitSyncContainer = document.getElementById('git-sync-container');
+  const elBtnToggleSync = document.getElementById('btn-toggle-sync');
+  
+  if (forceState !== null) {
+    gitSyncActive = forceState;
+  } else {
+    gitSyncActive = !gitSyncActive;
+  }
+
+  if (gitSyncActive) {
+    elGitSyncContainer.style.display = 'block';
+    elBtnToggleSync.classList.add('active');
+    
+    // Close import container if open
+    const elImportContainer = document.getElementById('import-container');
+    if (elImportContainer && elImportContainer.style.display !== 'none') {
+      toggleImportMode();
+    }
+  } else {
+    elGitSyncContainer.style.display = 'none';
+    elBtnToggleSync.classList.remove('active');
+  }
+}
+
+async function handleGitPull() {
+  const repoUrl = document.getElementById('sync-repo-url').value.trim();
+  const token = document.getElementById('sync-token').value.trim();
+  const sourceBranch = document.getElementById('sync-source-branch').value.trim();
+  const targetPath = document.getElementById('sync-target-path').value.trim();
+
+  const pullBtn = document.getElementById('btn-git-pull');
+
+  if (!repoUrl || !sourceBranch || !targetPath) {
+    showSyncStatus("Veuillez remplir tous les champs obligatoires (URL du Dépôt, Branche Source, et Fichier cible).", "danger");
+    return;
+  }
+
+  setSyncLoading(pullBtn, true, "Lecture en cours...");
+  showSyncStatus("Clonage et lecture du fichier cible dans le dépôt...", "info");
+
+  try {
+    const response = await fetch('/api/sync/pull', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repoUrl, token, sourceBranch, targetPath })
+    });
+
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || `Erreur serveur (HTTP ${response.status})`);
+    }
+
+    if (result.mode === 'none') {
+      showSyncStatus(result.message || "Fichier introuvable.", "warning");
+    } else {
+      const modeLabel = result.mode === 'abstract' ? "Mode Abstrait (.formatter-abstract-values.yml)" : "Mode Classique";
+      showSyncStatus(`Succès : Configuration chargée avec succès (${modeLabel}) !`, "success");
+      
+      // Populate form
+      const activeSchema = isMultiDoc ? appSchema[activeTabIndex].schema : appSchema;
+      if (activeSchema && activeSchema.fields) {
+        populateFormFromData(result.data, activeSchema.fields);
+      }
+
+      // Update cache & live output
+      if (isMultiDoc) {
+        tabDataCache[activeTabIndex] = extractFormData();
+      }
+      updateLiveOutput();
+    }
+  } catch (error) {
+    showSyncStatus(`Erreur de Pull : ${error.message}`, "danger");
+  } finally {
+    setSyncLoading(pullBtn, false);
+  }
+}
+
+async function handleGitCommit() {
+  const repoUrl = document.getElementById('sync-repo-url').value.trim();
+  const token = document.getElementById('sync-token').value.trim();
+  const sourceBranch = document.getElementById('sync-source-branch').value.trim();
+  const targetPath = document.getElementById('sync-target-path').value.trim();
+  const destOption = document.querySelector('input[name="sync-dest-option"]:checked').value;
+  
+  const destBranch = destOption === 'feature' ? 'feature/form-update' : sourceBranch;
+  const commitBtn = document.getElementById('btn-git-commit');
+
+  if (!repoUrl || !sourceBranch || !targetPath) {
+    showSyncStatus("Veuillez remplir tous les champs obligatoires (URL du Dépôt, Branche Source, et Fichier cible).", "danger");
+    return;
+  }
+
+  // Extract content generated from the form
+  let content = generateOutputText();
+
+  // Determine if abstract layer is used
+  const activeSchema = isMultiDoc ? appSchema[activeTabIndex].schema : appSchema;
+  let abstractValues = null;
+  if (activeSchema && activeSchema.outputTemplate) {
+    abstractValues = extractFormData();
+  }
+
+  setSyncLoading(commitBtn, true, "Commit en cours...");
+  showSyncStatus("Préparation, commit et push sur la branche de destination...", "info");
+
+  try {
+    const response = await fetch('/api/sync/commit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ repoUrl, token, sourceBranch, destBranch, targetPath, content, abstractValues })
+    });
+
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || `Erreur serveur (HTTP ${response.status})`);
+    }
+
+    let statusHtml = `Succès ! Modifié poussé sur la branche <strong style="font-family: var(--font-mono);">${result.destBranch}</strong>. `;
+    if (!result.pushedDirectly) {
+      statusHtml += `<a href="${result.mergeRequestUrl}" target="_blank" class="status-link" style="text-decoration: underline; font-weight: 600; color: #a5b4fc;">Créer/Consulter la Merge/Pull Request ↗</a>`;
+    } else {
+      statusHtml += `<a href="${result.mergeRequestUrl}" target="_blank" class="status-link" style="text-decoration: underline; font-weight: 600; color: #a5b4fc;">Consulter les fichiers sur Git ↗</a>`;
+    }
+
+    showSyncStatus(statusHtml, "success", true);
+  } catch (error) {
+    showSyncStatus(`Erreur de Commit : ${error.message}`, "danger");
+  } finally {
+    setSyncLoading(commitBtn, false);
+  }
+}
+
+function showSyncStatus(message, type, isHtml = false) {
+  const statusEl = document.getElementById('git-sync-status');
+  if (!statusEl) return;
+
+  statusEl.style.display = 'block';
+  if (isHtml) {
+    statusEl.innerHTML = message;
+  } else {
+    statusEl.textContent = message;
+  }
+
+  statusEl.style.border = '1px solid';
+  if (type === 'success') {
+    statusEl.style.backgroundColor = 'rgba(16, 185, 129, 0.15)';
+    statusEl.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+    statusEl.style.color = '#34d399';
+  } else if (type === 'danger') {
+    statusEl.style.backgroundColor = 'rgba(239, 68, 68, 0.15)';
+    statusEl.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+    statusEl.style.color = '#f87171';
+  } else if (type === 'warning') {
+    statusEl.style.backgroundColor = 'rgba(245, 158, 11, 0.15)';
+    statusEl.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+    statusEl.style.color = '#fbbf24';
+  } else {
+    statusEl.style.backgroundColor = 'rgba(99, 102, 241, 0.15)';
+    statusEl.style.borderColor = 'rgba(99, 102, 241, 0.3)';
+    statusEl.style.color = '#a5b4fc';
+  }
+}
+
+function setSyncLoading(btn, isLoading, loadingText = '') {
+  if (!btn) return;
+  if (isLoading) {
+    btn.disabled = true;
+    btn.dataset.originalText = btn.innerHTML;
+    btn.innerHTML = `
+      <svg class="icon loading-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;">
+        <line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
+      </svg>
+      <span>${loadingText}</span>
+    `;
+  } else {
+    btn.disabled = false;
+    if (btn.dataset.originalText) {
+      btn.innerHTML = btn.dataset.originalText;
+    }
+  }
+}
+
 

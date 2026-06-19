@@ -1,0 +1,336 @@
+title: "Configuration Cluster RKE2"
+description: >
+  Schéma de génération de configuration complète d'un cluster RKE2 sur infrastructure Outscale.
+  Produit un dictionnaire JSON unifié : clés globales, labels, load-balancer et objet `vms`
+  contenant Control Planes et Workers, nommés dynamiquement selon l'environnement.
+outputFormat: "json"
+
+# ============================================================
+# OUTPUT TEMPLATE — Structure JSON cible dissociée du formulaire
+# ============================================================
+#
+# Directives utilisées :
+#   $repeat  : "field"  → itère N fois (valeur du champ)
+#   $key     : "${expr}"→ nom dynamique de la clé dans un dict
+#   $item    : { ... }  → template d'un élément itéré
+#   $merge   : [ ... ]  → fusionne plusieurs blocs $repeat en un seul dict
+#   $if / $then / $else → inclusion conditionnelle
+#   ${expr}             → interpolation JS (accès champs, _index, tableaux, ternaires)
+#
+# Variables d'itération disponibles :
+#   $_index → index 0-based de l'itération courante
+#   $_count → nombre total d'itérations
+
+outputTemplate:
+  # ── Clés de base ──────────────────────────────────────────
+  cni_plugin:           "${cni_plugin}"
+  image_name:           "${image_name}"
+  environment_type:     "${environnement}"
+  kubernetes_version:   "${rke2_version}"
+  region:               "${region}"
+  system_default_registry: "docker-proxy.docapost.tech"
+
+  # ── AZ du Load Balancer (tableau sélectionné par l'utilisateur) ─
+  az_lb_tools: "${lb_tools_az}"
+
+  # ── Labels RKE2 globaux (fixes) ───────────────────────────
+  labels_rke2:
+    "kubernetes.docaposte/bu":          "bu"
+    "kubernetes.docaposte/dsi-managed": true
+    "kubernetes.docaposte/maintainer":  "equipe-sre"
+
+  # ── Configuration du Load Balancer ───────────────────────
+  load_balancer_config:
+    az: "${lb_tools_az}"
+    rules:
+      - protocol:            "tcp"
+        load_balancer_port:  80
+        backend_port:        80
+        ip_ranges:
+          - "0.0.0.0/0"
+      - protocol:            "tcp"
+        load_balancer_port:  443
+        backend_port:        443
+        ip_ranges:
+          - "0.0.0.0/0"
+
+  # ── Dictionnaire unique des VMs (CP + Workers fusionnés) ──
+  #
+  # On utilise $merge pour combiner deux boucles $repeat ($key) dans
+  # un seul objet plat. Chaque bloc génère un dict { clé: config_vm }.
+  #
+  # Nommage des clés :
+  #   CP  → ${prefix}u6-${nom_projet}-cp-${_index}   ex: su6-projectname-cp-0
+  #   WK  → ${prefix}u6-${nom_projet}-wk-${_index}   ex: su6-projectname-wk-0
+  #   prefix = "p" si prod, sinon "s"
+  #
+  # vm_type = tinav${cpu_generation}.c${cpu_qty}r${ram_qty}p${performance}
+  vms:
+    $merge:
+      # ── Boucle Control Planes ──────────────────────────────
+      - $repeat: "cp_template.quantite"
+        $key:    "${environnement === 'prod' ? 'p' : 's'}u6-${nom_projet}-cp-${_index}"
+        $item:
+          vm_type:  "tinav${cp_template.cpu_generation}.c${cp_template.cpu_qty}r${cp_template.ram_qty}p${cp_template.performance}"
+          role:     "controlplane,etcd"
+          # Subnet fixé sur l'AZ "a" pour tous les Control Planes
+          subnet_name: "subnet-${nom_projet}-${environnement}-a"
+          add_volumes:
+            b:
+              block_device_mapping: true
+              iops:  3600
+              size:  "${cp_template.volume_rancher.size}"
+              type:  "${cp_template.volume_rancher.type}"
+          vgs:
+            vg02:
+              pvs:
+                - "b"
+              lvs:
+                rancher:
+                  fstype:     "xfs"
+                  size:       "${cp_template.volume_rancher.size}"
+                  mountpoint: "/var/lib/rancher"
+          labels_rke2: {}
+
+      # ── Boucle Workers ────────────────────────────────────
+      - $repeat: "worker_template.quantite"
+        $key:    "${environnement === 'prod' ? 'p' : 's'}u6-${nom_projet}-wk-${_index}"
+        $item:
+          vm_type:  "tinav${worker_template.cpu_generation}.c${worker_template.cpu_qty}r${worker_template.ram_qty}p${worker_template.performance}"
+          role:     "worker"
+          # Round-Robin sur les AZs cochées : lb_tools_az[_index % lb_tools_az.length]
+          subnet_name: "subnet-${nom_projet}-${environnement}-${lb_tools_az[_index % lb_tools_az.length]}"
+          add_volumes:
+            b:
+              block_device_mapping: true
+              size: "${worker_template.volume_rancher.size}"
+              type: "${worker_template.volume_rancher.type}"
+            # Volume de données : inclus uniquement si enabled = true
+            c:
+              $if:  "worker_template.volume_data.enabled"
+              $then:
+                block_device_mapping: true
+                size: "${worker_template.volume_data.size}"
+                type: "${worker_template.volume_data.type}"
+          vgs:
+            vg02:
+              pvs:
+                - "b"
+              lvs:
+                rancher:
+                  fstype:     "xfs"
+                  size:       "${worker_template.volume_rancher.size}"
+                  mountpoint: "/var/lib/rancher"
+                # LV data : inclus uniquement si le volume de données est activé
+                data:
+                  $if:  "worker_template.volume_data.enabled"
+                  $then:
+                    fstype:     "xfs"
+                    size:       "${worker_template.volume_data.size}"
+                    mountpoint: "/data"
+          labels_rke2:
+            "topology.bsu.csi.outscale.com/zone": "${region}${lb_tools_az[_index % lb_tools_az.length]}"
+
+# ============================================================
+# FIELDS — Définition des champs du formulaire
+# ============================================================
+fields:
+  # ── Identifiants de base ──────────────────────────────────
+  - name: nom_projet
+    label: "Nom du projet"
+    type: "string"
+    required: true
+    description: "Identifiant court du projet, utilisé dans les noms de VMs et de subnets (ex: projectname, myapp)."
+    validation:
+      regex: "^[a-z][a-z0-9-]*$"
+      message: "Minuscules, chiffres et tirets uniquement. Doit commencer par une lettre."
+
+  - name: environnement
+    label: "Environnement"
+    type: "select"
+    default: "staging"
+    options: ["staging", "prod"]
+    description: "Environnement cible. Détermine le préfixe 's' (staging) ou 'p' (prod) dans les noms de VMs."
+
+  - name: rke2_version
+    label: "Version RKE2"
+    type: "string"
+    default: "v1.34.4+rke2r1"
+    description: "Version de RKE2 à déployer. Format : vX.Y.Z+rke2rN."
+    validation:
+      regex: "^v[0-9]+\\.[0-9]+\\.[0-9]+\\+rke2r[0-9]+$"
+      message: "Format attendu : vX.Y.Z+rke2rN (ex: v1.34.4+rke2r1)."
+
+  - name: image_name
+    label: "Nom de l'image"
+    type: "string"
+    default: "dsi-ubuntu-24.04-rke2"
+    description: "Nom de l'image de base utilisée pour toutes les VMs du cluster."
+
+  - name: cni_plugin
+    label: "Plugin CNI"
+    type: "select"
+    default: "cilium"
+    options: ["cilium", "calico"]
+    description: "Plugin réseau CNI à déployer sur le cluster RKE2."
+
+  - name: region
+    label: "Région Outscale"
+    type: "select"
+    default: "eu-west-2"
+    options: ["eu-west-2", "cloudgouv-eu-west1"]
+    description: "Région cloud Outscale cible. Utilisée dans les labels de topologie BSU."
+
+  - name: lb_tools_az
+    label: "Zones de disponibilité du Load Balancer"
+    type: "array"
+    itemType: "string"
+    default: ["a", "b", "c"]
+    options: ["a", "b", "c"]
+    description: >
+      Zones de disponibilité (AZs) sur lesquelles le load balancer est actif.
+      Ces mêmes AZs sont utilisées en Round-Robin pour distribuer les Workers
+      (subnet et label de topologie BSU).
+
+  # ── Template Control Plane ────────────────────────────────
+  - name: cp_template
+    label: "Template Control Plane"
+    type: "object"
+    description: "Gabarit de configuration des nœuds Control Plane (maîtres + etcd)."
+    fields:
+      - name: quantite
+        label: "Nombre de Control Planes"
+        type: "integer"
+        default: 3
+        min: 1
+        description: "Nombre de nœuds Control Plane à créer (recommandé : 3 pour la HA)."
+
+      - name: cpu_qty
+        label: "Quantité de vCPUs"
+        type: "integer"
+        default: 2
+        description: "Nombre de vCPUs alloués à chaque Control Plane."
+
+      - name: cpu_generation
+        label: "Génération CPU"
+        type: "select"
+        default: 6
+        options: [5, 6, 7]
+        description: "Génération du CPU Outscale (5 = Skylake, 6 = Cascade Lake, 7 = Ice Lake)."
+
+      - name: ram_qty
+        label: "RAM (Go)"
+        type: "integer"
+        default: 8
+        description: "Quantité de RAM en Go pour chaque Control Plane."
+
+      - name: performance
+        label: "Niveau de performance réseau"
+        type: "select"
+        default: 1
+        options: [1, 2, 3]
+        description: "Niveau de performance réseau Outscale (1 = standard, 3 = haute performance)."
+
+      - name: volume_rancher
+        label: "Volume Rancher (disque b — /var/lib/rancher)"
+        type: "object"
+        description: "Configuration du disque principal des Control Planes (stockage Rancher/etcd). Type io1 recommandé pour les IOPS garantis."
+        fields:
+          - name: size
+            label: "Taille (Go)"
+            type: "integer"
+            default: 50
+            min: 20
+            description: "Taille du volume Rancher en Go."
+
+          - name: type
+            label: "Type de disque"
+            type: "select"
+            default: "io1"
+            options: ["io1", "gp2"]
+            description: "Type de volume Outscale BSU. io1 = IOPS provisionnés (recommandé CP), gp2 = usage général."
+
+  # ── Template Worker ───────────────────────────────────────
+  - name: worker_template
+    label: "Template Worker"
+    type: "object"
+    description: "Gabarit de configuration des nœuds Worker (charge applicative)."
+    fields:
+      - name: quantite
+        label: "Nombre de Workers"
+        type: "integer"
+        default: 4
+        min: 1
+        description: "Nombre de nœuds Worker à créer. Distribués en Round-Robin sur les AZs sélectionnées."
+
+      - name: cpu_qty
+        label: "Quantité de vCPUs"
+        type: "integer"
+        default: 8
+        description: "Nombre de vCPUs alloués à chaque Worker."
+
+      - name: cpu_generation
+        label: "Génération CPU"
+        type: "select"
+        default: 6
+        options: [5, 6, 7]
+        description: "Génération du CPU Outscale (5 = Skylake, 6 = Cascade Lake, 7 = Ice Lake)."
+
+      - name: ram_qty
+        label: "RAM (Go)"
+        type: "integer"
+        default: 32
+        description: "Quantité de RAM en Go pour chaque Worker."
+
+      - name: performance
+        label: "Niveau de performance réseau"
+        type: "select"
+        default: 1
+        options: [1, 2, 3]
+        description: "Niveau de performance réseau Outscale (1 = standard, 3 = haute performance)."
+
+      - name: volume_rancher
+        label: "Volume Rancher (disque b — /var/lib/rancher)"
+        type: "object"
+        description: "Configuration du disque Rancher des Workers. Toujours présent."
+        fields:
+          - name: size
+            label: "Taille (Go)"
+            type: "integer"
+            default: 50
+            min: 20
+            description: "Taille du volume Rancher en Go."
+
+          - name: type
+            label: "Type de disque"
+            type: "select"
+            default: "gp2"
+            options: ["gp2", "io1"]
+            description: "Type de volume Outscale BSU."
+
+      - name: volume_data
+        label: "Volume de données (disque c — /data)"
+        type: "object"
+        description: >-
+          Volume de données supplémentaire des Workers. Activé par défaut.
+          Désactivez-le pour qu'il soit absent de la configuration générée.
+        fields:
+          - name: enabled
+            label: "Activer le volume de données"
+            type: "boolean"
+            default: true
+            description: "Si désactivé, le disque c et le logical volume /data sont entièrement supprimés de la sortie."
+
+          - name: size
+            label: "Taille (Go)"
+            type: "integer"
+            default: 10
+            min: 1
+            description: "Taille du volume de données en Go."
+
+          - name: type
+            label: "Type de disque"
+            type: "select"
+            default: "gp2"
+            options: ["gp2", "io1"]
+            description: "Type de volume Outscale BSU."

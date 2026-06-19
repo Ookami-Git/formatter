@@ -39,11 +39,13 @@
           </div>
           <div id="config-selector-container" class="branch-selector-container" style="display: none;">
             <label for="select-config" class="branch-label">Configuration :</label>
-            <select id="select-config" class="form-control select-sm" style="width: auto; height: 32px; padding: 0 24px 0 12px; font-size: 0.8rem;"></select>
+            <select id="select-config" class="form-control select-sm"
+              style="width: auto; height: 32px; padding: 0 24px 0 12px; font-size: 0.8rem;"></select>
           </div>
           <div id="branch-selector-container" class="branch-selector-container" style="display: none;">
             <label for="select-git-branch" class="branch-label">Branche :</label>
-            <select id="select-git-branch" class="form-control select-sm" style="width: auto; height: 32px; padding: 0 24px 0 12px; font-size: 0.8rem;"></select>
+            <select id="select-git-branch" class="form-control select-sm"
+              style="width: auto; height: 32px; padding: 0 24px 0 12px; font-size: 0.8rem;"></select>
           </div>
           <button id="btn-refresh" class="btn btn-secondary" title="Recharger le schéma depuis le serveur">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -61,7 +63,91 @@
       <section class="panel panel-form" aria-labelledby="form-heading">
         <div class="panel-header">
           <h2 id="form-heading">Formulaire de saisie</h2>
-          <span class="badge">Édition</span>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button id="btn-toggle-sync" class="btn btn-secondary btn-sm" title="Synchroniser avec Git"
+              style="height: 28px; padding: 0 10px; font-size: 0.75rem; gap: 4px;">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
+              </svg>
+              Sync Git
+            </button>
+            <span class="badge">Édition</span>
+          </div>
+        </div>
+        <!-- Git Sync container (hidden by default) -->
+        <div id="git-sync-container" class="import-container"
+          style="display: none; border-bottom: 1px solid var(--border-color);">
+          <div class="import-header">
+            <span class="import-title">Synchronisation Git (GitLab / GitHub)</span>
+            <button id="btn-close-sync" class="btn btn-secondary btn-sm" type="button"
+              style="height: 24px; padding: 0 8px; font-size: 0.7rem;">Fermer</button>
+          </div>
+          <div class="git-sync-form"
+            style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px;">
+            <div class="form-group" style="grid-column: span 2;">
+              <label class="form-label required" for="sync-repo-url">URL du Dépôt Projet</label>
+              <input type="text" id="sync-repo-url" class="form-control"
+                placeholder="https://[login]@gitlab.com/username/project.git" required autocomplete="off">
+            </div>
+            <div class="form-group" style="grid-column: span 2;">
+              <label class="form-label required" for="sync-token">Jeton d'accès (PAT) / Mot de passe</label>
+              <input type="password" id="sync-token" class="form-control" placeholder="glpat-... ou ghp_..." required
+                autocomplete="new-password">
+            </div>
+            <div class="form-group">
+              <label class="form-label required" for="sync-source-branch">Branche Source</label>
+              <input type="text" id="sync-source-branch" class="form-control" value="main" placeholder="ex: main"
+                required autocomplete="off">
+            </div>
+            <div class="form-group">
+              <label class="form-label required" for="sync-target-path">Chemin du fichier destination dans le
+                projet</label>
+              <input type="text" id="sync-target-path" class="form-control"
+                placeholder="ex: variables.tf ou env/dev/values.yaml" required autocomplete="off">
+            </div>
+            <div class="form-group" style="grid-column: span 2;">
+              <span class="form-label">Branche de Destination</span>
+              <div style="display: flex; gap: 20px; align-items: center; margin-top: 6px;">
+                <label
+                  style="display: flex; align-items: center; gap: 8px; font-size: 0.8rem; cursor: pointer; color: var(--text-main);">
+                  <input type="radio" name="sync-dest-option" value="feature" checked
+                    style="accent-color: var(--color-primary); cursor: pointer;">
+                  Branche fixe (<span
+                    style="font-family: var(--font-mono); font-size: 0.75rem;">feature/form-update</span>)
+                </label>
+                <label
+                  style="display: flex; align-items: center; gap: 8px; font-size: 0.8rem; cursor: pointer; color: var(--text-main);">
+                  <input type="radio" name="sync-dest-option" value="source"
+                    style="accent-color: var(--color-primary); cursor: pointer;">
+                  Branche source directement
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="import-actions" style="margin-top: 16px; display: flex; gap: 12px;">
+            <button id="btn-git-pull" class="btn btn-secondary btn-sm" type="button" style="flex: 1; height: 36px;">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Pull (Lire le projet)
+            </button>
+            <button id="btn-git-commit" class="btn btn-primary btn-sm" type="button" style="flex: 1; height: 36px;">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px;">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                <polyline points="17 21 17 13 7 13 7 21" />
+                <polyline points="7 3 7 8 15 8" />
+              </svg>
+              Commit (Écrire & Pousser)
+            </button>
+          </div>
+          <div id="git-sync-status"
+            style="margin-top: 12px; padding: 10px 14px; border-radius: var(--radius-sm); font-size: 0.8rem; line-height: 1.4; display: none;">
+          </div>
         </div>
         <!-- Tab bar container for multi-doc YAML -->
         <div id="tab-bar-container" class="tab-bar-container" style="display: none;"></div>
@@ -108,9 +194,9 @@
             <button id="btn-import" class="btn btn-secondary btn-sm" title="Importer une configuration existante">
               <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                 stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                <polyline points="7 10 12 15 17 10"/>
-                <line x1="12" y1="15" x2="12" y2="3"/>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
               <span id="import-text">Importer</span>
             </button>
@@ -122,12 +208,13 @@
             <span class="import-title">Coller une configuration existante (JSON, YAML ou HCL/tfvars)</span>
             <button id="btn-cancel-import" class="btn btn-secondary btn-sm" type="button">Annuler</button>
           </div>
-          <textarea id="import-textarea" class="import-textarea" placeholder="Collez ici votre JSON, YAML ou HCL/tfvars..."></textarea>
+          <textarea id="import-textarea" class="import-textarea"
+            placeholder="Collez ici votre JSON, YAML ou HCL/tfvars..."></textarea>
           <div class="import-actions">
             <button id="btn-apply-import" class="btn btn-primary btn-sm" type="button">
               <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                 stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
+                <polyline points="20 6 9 17 4 12" />
               </svg>
               Appliquer au formulaire
             </button>
