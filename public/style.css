@@ -1122,3 +1122,58 @@ code[class*="language-"] {
   color: #c7d2fe !important;
 }
 
+/* ── Schema and Form Selection Control Group ───────────────────────────── */
+.schema-control-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (max-width: 768px) {
+  .schema-control-group {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
+
+/* ── Unified Sync & Import Tabs ────────────────────────────────────────── */
+.sync-import-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 16px;
+  width: 100%;
+}
+
+.sync-import-tab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 0.8rem;
+  padding: 8px 14px 10px 14px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.sync-import-tab-btn:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.sync-import-tab-btn.active {
+  color: #a5b4fc;
+  border-bottom-color: var(--color-primary-hover);
+  background: rgba(99, 102, 241, 0.04);
+  font-weight: 600;
+}
+
+.sync-import-tab-content {
+  animation: fadeIn var(--transition-fast) ease-out;
+}
+
+

@@ -20,12 +20,16 @@ const elCopyText = document.getElementById('copy-text');
 const elChkKeepEmpty = document.getElementById('chk-keep-empty');
 const elTabBarContainer = document.getElementById('tab-bar-container');
 
-// Import elements
-const elBtnImport = document.getElementById('btn-import');
-const elImportContainer = document.getElementById('import-container');
+// Sync / Import elements
+const elSyncImportContainer = document.getElementById('sync-import-container');
+const elBtnCloseSyncImport = document.getElementById('btn-close-sync-import');
+const elTabSyncGit = document.getElementById('tab-sync-git');
+const elTabSyncManual = document.getElementById('tab-sync-manual');
+const elContentSyncGit = document.getElementById('content-sync-git');
+const elContentSyncManual = document.getElementById('content-sync-manual');
+
 const elImportTextarea = document.getElementById('import-textarea');
 const elBtnApplyImport = document.getElementById('btn-apply-import');
-const elBtnCancelImport = document.getElementById('btn-cancel-import');
 let importModeActive = false;
 
 // Git branch selector elements
@@ -58,10 +62,19 @@ document.addEventListener('DOMContentLoaded', () => {
   elBtnCopy.addEventListener('click', copyToClipboard);
   elChkKeepEmpty.addEventListener('change', updateLiveOutput);
 
-  // Import event listeners
-  elBtnImport.addEventListener('click', toggleImportMode);
-  elBtnCancelImport.addEventListener('click', toggleImportMode);
-  elBtnApplyImport.addEventListener('click', applyImport);
+  // Sync / Import event listeners
+  if (elTabSyncGit) {
+    elTabSyncGit.addEventListener('click', () => switchSyncImportTab('git'));
+  }
+  if (elTabSyncManual) {
+    elTabSyncManual.addEventListener('click', () => switchSyncImportTab('manual'));
+  }
+  if (elBtnCloseSyncImport) {
+    elBtnCloseSyncImport.addEventListener('click', () => toggleSyncImportDrawer(false));
+  }
+  if (elBtnApplyImport) {
+    elBtnApplyImport.addEventListener('click', applyImport);
+  }
 
   // Git branch selector
   elSelectGitBranch.addEventListener('change', () => {
@@ -1894,20 +1907,6 @@ function getDefaultValues(fields) {
 
 // ===== IMPORT FUNCTIONALITY =====
 
-function toggleImportMode() {
-  importModeActive = !importModeActive;
-  if (importModeActive) {
-    elImportContainer.style.display = 'block';
-    elBtnImport.classList.add('active');
-    elImportTextarea.value = '';
-    elImportTextarea.focus();
-  } else {
-    elImportContainer.style.display = 'none';
-    elBtnImport.classList.remove('active');
-    elImportTextarea.value = '';
-  }
-}
-
 function applyImport() {
   const rawText = elImportTextarea.value.trim();
   if (!rawText) {
@@ -1960,7 +1959,7 @@ function applyImport() {
   updateLiveOutput();
 
   // Close import panel
-  toggleImportMode();
+  toggleSyncImportDrawer(false);
 }
 
 // Populate form fields from imported data object
@@ -3198,53 +3197,73 @@ let gitSyncActive = false;
 
 function initGitSyncUI() {
   const elBtnToggleSync = document.getElementById('btn-toggle-sync');
-  const elBtnCloseSync = document.getElementById('btn-close-sync');
-  const elGitSyncContainer = document.getElementById('git-sync-container');
   const elSyncRepoUrl = document.getElementById('sync-repo-url');
   const elBtnPull = document.getElementById('btn-git-pull');
   const elBtnCommit = document.getElementById('btn-git-commit');
 
-  if (!elBtnToggleSync || !elGitSyncContainer) return;
+  if (!elBtnToggleSync) return;
 
   // Prefill Repo URL from URL param ?repo=...
   const urlParams = new URLSearchParams(window.location.search);
   const repoParam = urlParams.get('repo');
   if (repoParam) {
-    elSyncRepoUrl.value = repoParam;
-    toggleGitSyncMode(true);
+    if (elSyncRepoUrl) elSyncRepoUrl.value = repoParam;
+    toggleSyncImportDrawer(true);
+    switchSyncImportTab('git');
   }
 
   // Toggle sync container
-  elBtnToggleSync.addEventListener('click', () => toggleGitSyncMode());
-  elBtnCloseSync.addEventListener('click', () => toggleGitSyncMode(false));
+  elBtnToggleSync.addEventListener('click', () => toggleSyncImportDrawer());
 
   // Pull and Commit Actions
-  elBtnPull.addEventListener('click', handleGitPull);
-  elBtnCommit.addEventListener('click', handleGitCommit);
+  if (elBtnPull) elBtnPull.addEventListener('click', handleGitPull);
+  if (elBtnCommit) elBtnCommit.addEventListener('click', handleGitCommit);
 }
 
-function toggleGitSyncMode(forceState = null) {
-  const elGitSyncContainer = document.getElementById('git-sync-container');
+let syncImportDrawerActive = false;
+let activeSyncImportTab = 'git'; // 'git' or 'manual'
+
+function toggleSyncImportDrawer(forceState = null) {
   const elBtnToggleSync = document.getElementById('btn-toggle-sync');
-  
+  if (!elSyncImportContainer) return;
+
   if (forceState !== null) {
-    gitSyncActive = forceState;
+    syncImportDrawerActive = forceState;
   } else {
-    gitSyncActive = !gitSyncActive;
+    syncImportDrawerActive = !syncImportDrawerActive;
   }
 
-  if (gitSyncActive) {
-    elGitSyncContainer.style.display = 'block';
-    elBtnToggleSync.classList.add('active');
+  if (syncImportDrawerActive) {
+    elSyncImportContainer.style.display = 'block';
+    if (elBtnToggleSync) elBtnToggleSync.classList.add('active');
     
-    // Close import container if open
-    const elImportContainer = document.getElementById('import-container');
-    if (elImportContainer && elImportContainer.style.display !== 'none') {
-      toggleImportMode();
+    // Focus manual textarea if that tab is active
+    if (activeSyncImportTab === 'manual' && elImportTextarea) {
+      elImportTextarea.focus();
     }
   } else {
-    elGitSyncContainer.style.display = 'none';
-    elBtnToggleSync.classList.remove('active');
+    elSyncImportContainer.style.display = 'none';
+    if (elBtnToggleSync) elBtnToggleSync.classList.remove('active');
+  }
+}
+
+function switchSyncImportTab(tabName) {
+  activeSyncImportTab = tabName;
+
+  if (tabName === 'git') {
+    if (elTabSyncGit) elTabSyncGit.classList.add('active');
+    if (elTabSyncManual) elTabSyncManual.classList.remove('active');
+    if (elContentSyncGit) elContentSyncGit.style.display = 'block';
+    if (elContentSyncManual) elContentSyncManual.style.display = 'none';
+  } else {
+    if (elTabSyncGit) elTabSyncGit.classList.remove('active');
+    if (elTabSyncManual) elTabSyncManual.classList.add('active');
+    if (elContentSyncGit) elContentSyncGit.style.display = 'none';
+    if (elContentSyncManual) elContentSyncManual.style.display = 'block';
+    
+    if (elImportTextarea) {
+      elImportTextarea.focus();
+    }
   }
 }
 
