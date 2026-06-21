@@ -2,8 +2,8 @@ apiVersion: v2
 name: dynamic-form
 description: Générateur de formulaire dynamique depuis YAML / HCL / JSON — Kubernetes & Docker ready
 type: application
-version: 1.1.0
-appVersion: "1.1.0"
+version: 1.2.0
+appVersion: "1.2.0"
 keywords:
   - form
   - config
