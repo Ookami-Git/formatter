@@ -837,6 +837,14 @@ class GraphEngine {
   // ──────────────────────────────────────────────────────────
 
   enterNode(nodeId) {
+    // The green variables card writes directly to the node currently open.
+    // Its blue card is not rebuilt on every keystroke, so refresh it before
+    // leaving the context to show the values just entered.
+    const previousParentId = this.currentParentId;
+    if (previousParentId && previousParentId !== nodeId) {
+      this.refreshNodeEl(previousParentId);
+    }
+
     this.deselectAllNodes();
     this.currentParentId = nodeId;
 
@@ -2376,6 +2384,9 @@ class GraphEngine {
     const x = node.el.style.left;
     const y = node.el.style.top;
     node.el.innerHTML = this.buildNodeHTML(node);
+    // The DOM element is retained while its contents are replaced. Its
+    // listeners therefore need to be bound again for the new inline fields.
+    delete node.el.dataset.inlineFieldsBound;
     this.rewireNodeEvents(node);
     this.updateAllConnections();
   }
