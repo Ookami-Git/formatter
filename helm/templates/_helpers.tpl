@@ -1,7 +1,7 @@
 {{/*
 Nom complet de la release
 */}}
-{{- define "dynamic-form.fullname" -}}
+{{- define "formatter.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -17,16 +17,16 @@ Nom complet de la release
 {{/*
 Nom du chart
 */}}
-{{- define "dynamic-form.name" -}}
+{{- define "formatter.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Labels standards
 */}}
-{{- define "dynamic-form.labels" -}}
-helm.sh/chart: {{ include "dynamic-form.chart" . }}
-{{ include "dynamic-form.selectorLabels" . }}
+{{- define "formatter.labels" -}}
+helm.sh/chart: {{ include "formatter.chart" . }}
+{{ include "formatter.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -36,21 +36,21 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "dynamic-form.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "dynamic-form.name" . }}
+{{- define "formatter.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "formatter.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Chart name + version
 */}}
-{{- define "dynamic-form.chart" -}}
+{{- define "formatter.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Image tag (fallback vers appVersion)
 */}}
-{{- define "dynamic-form.imageTag" -}}
+{{- define "formatter.imageTag" -}}
 {{- .Values.image.tag | default .Chart.AppVersion }}
 {{- end }}

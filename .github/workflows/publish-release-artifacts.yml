@@ -91,7 +91,7 @@ jobs:
           test "$(awk '/^appVersion:/{print $2}' helm/Chart.yaml | tr -d '\"')" = "$VERSION"
           helm lint helm
           helm package helm --destination .
-          echo "package=dynamic-form-${VERSION}.tgz" >> "$GITHUB_OUTPUT"
+          echo "package=formatter-${VERSION}.tgz" >> "$GITHUB_OUTPUT"
       - name: Log in to GitHub Container Registry
         shell: bash
         run: echo "$GITHUB_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin

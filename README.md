@@ -827,10 +827,10 @@ Pour accéder au service :
 
 ```bash
 # Port-forward local
-kubectl port-forward svc/dynamic-form-service 3000:80
+kubectl port-forward svc/formatter-service 3000:80
 
 # Ou via NodePort
-kubectl patch svc dynamic-form-service -p '{"spec":{"type":"NodePort"}}'
+kubectl patch svc formatter-service -p '{"spec":{"type":"NodePort"}}'
 ```
 
 ---
@@ -858,14 +858,14 @@ Une release est créée automatiquement uniquement après une fusion sur `main`.
 La release synchronise `package.json`, `package-lock.json`, `helm/Chart.yaml` (`version` et `appVersion`), crée le tag `vX.Y.Z`, puis publie dans la même exécution :
 
 - l'image Docker `ghcr.io/<owner>/formatter:X.Y.Z` ;
-- la chart OCI `oci://ghcr.io/<owner>/charts/dynamic-form:X.Y.Z`.
+- la chart OCI `oci://ghcr.io/<owner>/charts/formatter:X.Y.Z`.
 
 Les Pull Requests ne publient aucune version : elles exécutent les tests et construisent l'image pour valider le changement. La chart publiée garde ainsi toujours l'image Docker de la même version par défaut.
 
 En cas de reprise d'une release déjà taguée, le workflow **Publish release artifacts** peut aussi être lancé manuellement depuis l'onglet *Actions* en indiquant la version sans le préfixe `v` (par exemple `1.1.0`).
 
 ```bash
-helm install my-form oci://ghcr.io/<owner>/charts/dynamic-form --version 1.2.3
+helm install my-formatter oci://ghcr.io/<owner>/charts/formatter --version 1.2.3
 ```
 
 ---
