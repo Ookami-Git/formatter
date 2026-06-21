@@ -11,6 +11,9 @@ const parser = require('./lib/parser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+// In an image, this is injected from the Docker tag at build time. The package
+// version remains the useful fallback for local execution outside Docker.
+const APP_VERSION = process.env.APP_VERSION || require('./package.json').version;
 
 // Configuration sources (Server Defaults)
 const CONFIG_SOURCE = process.env.CONFIG_SOURCE || 'local'; // 'local', 'git', or 'url'
@@ -443,6 +446,11 @@ try {
 // Liveness/Readiness Probe for Kubernetes
 app.get('/healthz', (req, res) => {
   res.status(200).json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Application version, sourced from package.json and kept in sync by semantic-release.
+app.get('/api/version', (req, res) => {
+  res.json({ version: APP_VERSION });
 });
 
 // Endpoint to retrieve list of branches and tags (for Git source only)
