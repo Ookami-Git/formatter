@@ -12,6 +12,7 @@ Générateur de formulaire dynamique qui produit du **JSON**, **YAML** ou **HCL/
 ## 📋 Fonctionnalités
 
 - 🔄 **Live Preview** — Le résultat s'actualise en temps réel pendant la saisie
+- 🧩 **Éditeur graphique** — Composer les objets et collections sur un canvas drag & drop
 - 📑 **Multi-documents YAML** — Séparateurs `---` convertis en onglets avec nommage via `# formatter_name:`
 - 🧩 **Objets dynamiques** — Les objets YAML peuvent avoir des clés libres comme `vm1`, `vm2` ou `node-a`
 - 🔀 **Formats de sortie** — JSON, YAML, HCL/tfvars en un clic
@@ -68,6 +69,47 @@ npm install
 npm start
 # → http://localhost:3000
 ```
+
+---
+
+## 🖥️ Interface d’édition
+
+L’application propose deux vues qui manipulent exactement les mêmes données. Vous pouvez passer de l’une à l’autre à tout moment avec les boutons **Formulaire** et **Graphique** dans l’en-tête, sans conversion ni perte des valeurs déjà saisies.
+
+### Mode graphique
+
+Le mode **Graphique** est la vue par défaut. Il est particulièrement adapté aux schémas ayant des objets imbriqués, des listes d’objets ou des objets à clés libres.
+
+1. Faites glisser un bloc de la palette vers le canvas — ou double-cliquez dessus — pour ajouter une instance.
+2. Cliquez sur un nœud pour l’éditer dans le panneau latéral ; les champs simples y sont renseignés comme dans le formulaire classique.
+3. Pour les tableaux et objets dynamiques, dupliquez, renommez ou supprimez les instances depuis le nœud. Une clé est demandée pour chaque objet dynamique.
+4. Utilisez les boutons du canvas pour recentrer, réinitialiser le zoom ou réorganiser automatiquement les nœuds. Le déplacement du canvas se fait avec un clic droit maintenu et la molette permet de zoomer.
+
+Les liens entre nœuds représentent leur hiérarchie. Les breadcrumbs permettent d’entrer dans un objet puis de remonter à la racine. Les contraintes du schéma (`required`, bornes de collections, validations) sont signalées directement sur les nœuds et dans le résumé de validation.
+
+Le panneau **Aperçu code** à droite est mis à jour en direct. Il peut être réduit, basculé entre YAML, JSON et HCL/tfvars, puis copié dans le presse-papier.
+
+### Mode formulaire
+
+Le mode **Formulaire** affiche les mêmes champs dans une vue plus linéaire. Il reste préférable pour une saisie dense ou pour relire rapidement les valeurs. Le résultat généré est également mis à jour en direct, peut ignorer les valeurs vides, changer de format et être copié.
+
+### Import et synchronisation Git
+
+Le bouton **Sync** ouvre deux outils :
+
+- **Import manuel** : collez un document JSON, YAML ou HCL/tfvars. Les valeurs reconnues sont appliquées au schéma courant et apparaissent immédiatement dans les deux modes d’édition.
+- **Synchronisation Git** : lisez un fichier depuis un dépôt, modifiez-le dans l’interface, puis poussez le résultat soit vers la branche source, soit vers la branche `feature/form-update`. Dans ce dernier cas, l’application fournit le lien vers la Pull/Merge Request à créer ou consulter.
+
+Le jeton d’accès saisi pour la synchronisation est utilisé pour l’opération demandée ; utilisez un PAT ayant uniquement les droits nécessaires sur le dépôt cible.
+
+### Repères de l’interface
+
+| Élément | Rôle |
+|---|---|
+| Sélecteur **Configuration** | Change de schéma lorsque le mode multi-configurations est activé. |
+| Sélecteur **Branche** | Charge une autre branche quand la configuration utilise Git. |
+| **Recharger** | Recharge la structure du schéma depuis le serveur et réinitialise les valeurs en cours. |
+| Footer | Affiche la source courante, l’état de chargement et la version de l’image exécutée. |
 
 ---
 
