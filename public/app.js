@@ -27,6 +27,7 @@ const elAppTitle = document.getElementById('app-title');
 const elAppDescription = document.getElementById('app-description');
 const elConfigPath = document.getElementById('config-path');
 const elSchemaStatus = document.getElementById('schema-status');
+const elAppVersion = document.getElementById('app-version');
 const elBtnRefresh = document.getElementById('btn-refresh');
 const elFormFieldsContainer = document.getElementById('form-fields-container');
 
@@ -64,6 +65,7 @@ const formatButtons = [elFormatYaml, elFormatJson, elFormatHcl];
 // Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
   loadConfig(false);
+  loadApplicationVersion();
   initGitSyncUI();
 
   // Set up event listeners
@@ -132,6 +134,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 });
+
+async function loadApplicationVersion() {
+  if (!elAppVersion) return;
+
+  try {
+    const response = await fetch('/api/version');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const { version } = await response.json();
+    elAppVersion.textContent = `v${version}`;
+  } catch (error) {
+    elAppVersion.textContent = 'v?';
+    console.warn('Impossible de charger la version de l’application :', error.message);
+  }
+}
 
 // Load Config Schema from Backend API
 async function loadConfig(forceRefresh = false) {

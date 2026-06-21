@@ -5,9 +5,11 @@ FROM node:20-alpine AS runner
 RUN apk add --no-cache git
 
 # Set production environment
+ARG APP_VERSION=dev
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV CONFIG_PATH=/app/examples/schema.yaml
+ENV APP_VERSION=${APP_VERSION}
 
 # Create application directory
 WORKDIR /app
