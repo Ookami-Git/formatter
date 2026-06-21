@@ -88,7 +88,7 @@ jobs:
         run: |
           VERSION='${{ inputs.version }}'
           test "$(awk '/^version:/{print $2}' helm/Chart.yaml)" = "$VERSION"
-          test "$(awk '/^appVersion:/{gsub(/\"/, \"\", $2); print $2}' helm/Chart.yaml)" = "$VERSION"
+          test "$(awk '/^appVersion:/{print $2}' helm/Chart.yaml | tr -d '\"')" = "$VERSION"
           helm lint helm
           helm package helm --destination .
           echo "package=dynamic-form-${VERSION}.tgz" >> "$GITHUB_OUTPUT"
