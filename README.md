@@ -837,13 +837,13 @@ kubectl patch svc formatter-service -p '{"spec":{"type":"NodePort"}}'
 
 ## 🔄 CI/CD — GitHub Actions
 
-Le workflow `.github/workflows/docker-publish.yml` construit et pousse automatiquement l'image Docker :
+Le workflow `.github/workflows/docker-publish.yml` valide que l'image Docker peut être construite sur chaque Pull Request. La publication est réalisée une seule fois par le workflow de release, lorsqu'une nouvelle version SemVer est créée.
 
-| Événement | Tags générés |
+| Événement | Action |
 |---|---|
-| Push sur `main` | `latest`, `<sha>` |
-| Tag `v1.2.3` | `1.2.3`, `1.2`, `1`, `<sha>` |
-| Pull Request | Build uniquement (pas de push) |
+| Pull Request vers `main` | Build Docker de validation AMD64, sans push |
+| Merge d'un `feat:` ou `fix:` | Release et unique build multi-arch ; tags `X.Y.Z`, `X.Y`, `X`, `latest` |
+| Merge d'un `chore:` ou `docs:` | Tests uniquement, aucune publication |
 
 L'image est publiée sur **GitHub Container Registry** : `ghcr.io/<owner>/formatter`
 
