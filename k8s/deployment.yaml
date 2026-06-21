@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: dynamic-form-schema
+  name: formatter-schema
   labels:
-    app: dynamic-form
+    app: formatter
 data:
   schema.yaml: |
     title: "Kubernetes Resource Planner"
@@ -65,18 +65,18 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: dynamic-form
+  name: formatter
   labels:
-    app: dynamic-form
+    app: formatter
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: dynamic-form
+      app: formatter
   template:
     metadata:
       labels:
-        app: dynamic-form
+        app: formatter
     spec:
       containers:
         - name: web-app
@@ -103,7 +103,7 @@ spec:
             # - name: GIT_TOKEN
             #   valueFrom:
             #     secretKeyRef:
-            #       name: dynamic-form-git-token  # kubectl create secret generic dynamic-form-git-token --from-literal=GIT_TOKEN=ghp_xxx
+            #       name: formatter-git-token  # kubectl create secret generic formatter-git-token --from-literal=GIT_TOKEN=ghp_xxx
             #       key: GIT_TOKEN
           # Kubernetes Health checks (Liveness/Readiness probes)
           livenessProbe:
@@ -141,7 +141,7 @@ spec:
           emptyDir: {}
         - name: config-volume
           configMap:
-            name: dynamic-form-schema
+            name: formatter-schema
             items:
               - key: schema.yaml
                 path: schema.yaml
@@ -149,9 +149,9 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: dynamic-form-service
+  name: formatter-service
   labels:
-    app: dynamic-form
+    app: formatter
 spec:
   type: ClusterIP
   ports:
@@ -160,4 +160,4 @@ spec:
       protocol: TCP
       name: http
   selector:
-    app: dynamic-form
+    app: formatter
