@@ -24,6 +24,8 @@ jobs:
     outputs:
       major: ${{ steps.version.outputs.major }}
       minor: ${{ steps.version.outputs.minor }}
+      image: ${{ steps.registry.outputs.image }}
+      chart_registry: ${{ steps.registry.outputs.chart_registry }}
     steps:
       - id: version
         shell: bash
@@ -32,6 +34,11 @@ jobs:
           [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]
           echo "major=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
           echo "minor=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+      - id: registry
+        shell: bash
+        run: |
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "chart_registry=oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts" >> "$GITHUB_OUTPUT"
 
   docker:
     needs: validate-version
@@ -55,10 +62,10 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:${{ inputs.version }}
-            ghcr.io/${{ github.repository }}:${{ needs.validate-version.outputs.major }}.${{ needs.validate-version.outputs.minor }}
-            ghcr.io/${{ github.repository }}:${{ needs.validate-version.outputs.major }}
-            ghcr.io/${{ github.repository }}:latest
+            ${{ needs.validate-version.outputs.image }}:${{ inputs.version }}
+            ${{ needs.validate-version.outputs.image }}:${{ needs.validate-version.outputs.major }}.${{ needs.validate-version.outputs.minor }}
+            ${{ needs.validate-version.outputs.image }}:${{ needs.validate-version.outputs.major }}
+            ${{ needs.validate-version.outputs.image }}:latest
           build-args: |
             APP_VERSION=${{ inputs.version }}
           platforms: linux/amd64,linux/arm64
@@ -91,4 +98,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
       - name: Push OCI chart
-        run: helm push "${{ steps.chart.outputs.package }}" "oci://ghcr.io/${{ github.repository_owner }}/charts"
+        run: helm push "${{ steps.chart.outputs.package }}" "${{ needs.validate-version.outputs.chart_registry }}"
