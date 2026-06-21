@@ -15,6 +15,9 @@ concurrency:
 
 jobs:
   release:
+    outputs:
+      released: ${{ steps.semantic.outputs.new_release_published }}
+      version: ${{ steps.semantic.outputs.new_release_version }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -31,6 +34,7 @@ jobs:
       - name: Run tests
         run: npm test
       - name: Create release and synchronize versions
+        id: semantic
         uses: cycjimmy/semantic-release-action@v4
         with:
           extra_plugins: |
@@ -38,3 +42,13 @@ jobs:
             @semantic-release/git
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-artifacts:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    uses: ./.github/workflows/publish-release-artifacts.yml
+    with:
+      version: ${{ needs.release.outputs.version }}
+    permissions:
+      contents: read
+      packages: write
