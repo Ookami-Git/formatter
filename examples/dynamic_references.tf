@@ -14,12 +14,12 @@ variable "virtual_machines" {
     subnet_name = string
     vgs = optional(map(object({
       disks = list(string)
-      lvs = list(object({
+      lvs = optional(list(object({
         name       = string
         size       = number
         mountpoint = string
         fstype     = string
-      }))
+      })))
     })))
     vm_type = string
   }))

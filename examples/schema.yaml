@@ -3,6 +3,7 @@ outputFormat: "yaml"
 fields:
   - name: appName
     label: "Nom de l'application"
+    icon: "fa-solid fa-cube"
     type: "string"
     default: "mon-microservice"
     required: true
@@ -53,6 +54,7 @@ fields:
 
   - name: resources
     label: "Limites de Ressources"
+    icon: "fa-solid fa-microchip"
     type: "object"
     description: "Définition des allocations de ressources CPU et Mémoire."
     fields:

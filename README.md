@@ -436,6 +436,7 @@ Chaque élément du tableau `fields` comporte les propriétés suivantes :
 | `name` | `string` | **Requis** | Identifiant technique du champ (clé utilisée dans le document généré en sortie). |
 | `type` | `string` | **Requis** | Type de donnée et de composant UI (`string`, `integer`, `number`, `boolean`, `select`, `object`, `array`). |
 | `label` | `string` | Optionnel | Libellé convivial affiché à l'utilisateur. Par défaut, le `name` converti en Title Case (ex: `app_name` ➜ `Nom de l'application`). |
+| `icon` | `string` | Optionnel | Classes Font Awesome Free affichées dans le formulaire et le mode graphique, par exemple `fa-solid fa-server`. Les ressources Font Awesome sont servies localement. |
 | `description` | `string` | Optionnel | Description d'aide ou tooltip affiché sous le champ de saisie. |
 | `required` | `boolean` | Optionnel | Rend le champ obligatoire (ajoute un astérisque rouge et bloque la validation). |
 | `default` | `any` | Optionnel | Valeur par défaut préremplie dans le formulaire au chargement. |
@@ -449,6 +450,17 @@ Chaque élément du tableau `fields` comporte les propriétés suivantes :
 | `condition` | `string` | Optionnel | Expression JavaScript définissant la condition d'affichage du champ (ex: `enable_ssl == true`). Supporte les opérateurs logiques (`&&`, `||`, `!`) et les chemins relatifs (ex: `../enable_ssl`). |
 | `min` | `number` | Optionnel | Limite minimale. Valide la longueur (pour `string`), la valeur numérique (pour `integer`/`number`), ou le nombre d'éléments/entrées (pour `array` et `object` dynamique). |
 | `max` | `number` | Optionnel | Limite maximale. Valide la longueur (pour `string`), la valeur numérique (pour `integer`/`number`), ou le nombre d'éléments/entrées (pour `array` et `object` dynamique). |
+
+Exemple d'icône définie directement dans le schéma :
+
+```yaml
+- name: database_host
+  label: "Serveur de base de données"
+  icon: "fa-solid fa-database"
+  type: "string"
+```
+
+Les noms et styles (`fa-solid`, `fa-regular`, `fa-brands`) sont consultables sur [Font Awesome](https://fontawesome.com/search). L'application les charge depuis ses propres fichiers locaux.
 
 ---
 

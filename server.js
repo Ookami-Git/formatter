@@ -419,6 +419,7 @@ app.use(express.json());
 
 // Serve static assets from public folder
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/lib/fontawesome', express.static(path.join(__dirname, 'node_modules', '@fortawesome', 'fontawesome-free')));
 
 // Initial Sync at startup for all Git configurations
 try {

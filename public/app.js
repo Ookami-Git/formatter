@@ -6,6 +6,21 @@ let activeTabIndex = 0;
 let tabDataCache = []; // Cache for form state per tab
 let currentConfigMeta = null;
 const collapsedPaths = new Set();
+let hasUnsavedChanges = false;
+
+function markConfigDirty() {
+  hasUnsavedChanges = true;
+}
+
+function clearConfigDirty() {
+  hasUnsavedChanges = false;
+}
+
+window.addEventListener('beforeunload', (event) => {
+  if (!hasUnsavedChanges) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
 
 // DOM Elements
 const elAppTitle = document.getElementById('app-title');
@@ -14,6 +29,7 @@ const elConfigPath = document.getElementById('config-path');
 const elSchemaStatus = document.getElementById('schema-status');
 const elBtnRefresh = document.getElementById('btn-refresh');
 const elFormFieldsContainer = document.getElementById('form-fields-container');
+
 const elCodeOutput = document.getElementById('code-output');
 const elBtnCopy = document.getElementById('btn-copy');
 const elCopyText = document.getElementById('copy-text');
@@ -22,7 +38,6 @@ const elTabBarContainer = document.getElementById('tab-bar-container');
 
 // Sync / Import elements
 const elSyncImportContainer = document.getElementById('sync-import-container');
-const elBtnCloseSyncImport = document.getElementById('btn-close-sync-import');
 const elTabSyncGit = document.getElementById('tab-sync-git');
 const elTabSyncManual = document.getElementById('tab-sync-manual');
 const elContentSyncGit = document.getElementById('content-sync-git');
@@ -61,6 +76,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   elBtnCopy.addEventListener('click', copyToClipboard);
   elChkKeepEmpty.addEventListener('change', updateLiveOutput);
+  elFormFieldsContainer.addEventListener('input', markConfigDirty);
+  elFormFieldsContainer.addEventListener('change', markConfigDirty);
 
   // Sync / Import event listeners
   if (elTabSyncGit) {
@@ -69,14 +86,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (elTabSyncManual) {
     elTabSyncManual.addEventListener('click', () => switchSyncImportTab('manual'));
   }
-  if (elBtnCloseSyncImport) {
-    elBtnCloseSyncImport.addEventListener('click', () => toggleSyncImportDrawer(false));
-  }
   if (elBtnApplyImport) {
     elBtnApplyImport.addEventListener('click', applyImport);
   }
 
-  // Git branch selector
   elSelectGitBranch.addEventListener('change', () => {
     const selectedBranch = elSelectGitBranch.value;
     if (selectedBranch) {
@@ -199,6 +212,8 @@ async function loadConfig(forceRefresh = false) {
 
     // Trigger initial generation of output
     updateLiveOutput();
+    refreshGraphIfActive();
+    clearConfigDirty();
 
     setStatus('Prêt', 'green');
   } catch (error) {
@@ -254,6 +269,7 @@ function switchTab(newIndex) {
   renderForm(activeSchema.fields, tabDataCache[activeTabIndex]);
 
   updateLiveOutput();
+  refreshGraphIfActive();
 }
 
 function pathBasename(pathStr) {
@@ -310,7 +326,13 @@ function setFormat(format) {
   // Update class of code output for Prism
   elCodeOutput.className = `language-${format === 'hcl' ? 'hcl' : format}`;
 
-  updateLiveOutput();
+  // If graph mode is active, update graph output too
+  if (typeof currentMode !== 'undefined' && currentMode === 'graph' && typeof updateGraphOutput === 'function') {
+    if (typeof graphEngine !== 'undefined' && graphEngine) graphEngine.updateGraphFormatButtons(format);
+    updateGraphOutput();
+  } else {
+    updateLiveOutput();
+  }
 }
 
 function updateFormatButtons() {
@@ -369,6 +391,9 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
     labelEl.classList.add('required');
   }
   labelEl.textContent = field.label || field.name;
+  if (field.icon && window.ConfigIcons) {
+    labelEl.insertAdjacentHTML('afterbegin', ConfigIcons.markup(field.icon, 'schema-icon'));
+  }
 
   // Add regex badge hint if field has regex validation
   if (field.validation && field.validation.regex) {
@@ -529,6 +554,9 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
       const switchLabel = document.createElement('span');
       switchLabel.className = 'form-label';
       switchLabel.textContent = field.label || field.name;
+      if (field.icon && window.ConfigIcons) {
+        switchLabel.insertAdjacentHTML('afterbegin', ConfigIcons.markup(field.icon, 'schema-icon'));
+      }
       labelWrapper.appendChild(switchLabel);
 
       if (field.description) {
@@ -606,41 +634,21 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
         numInput.step = 'any';
       }
 
-      if (field.min !== undefined && field.min !== null && field.min !== '') {
-        numInput.min = field.min;
-      }
-      if (field.max !== undefined && field.max !== null && field.max !== '') {
-        numInput.max = field.max;
-      }
+      Object.entries(FieldConstraints.inputAttributes(field)).forEach(([name, value]) => {
+        numInput.setAttribute(name, value);
+      });
 
       const finalNumVal = cachedVal !== undefined ? cachedVal : (field.default !== undefined ? field.default : '');
       numInput.value = finalNumVal;
 
       const clampValue = () => {
         if (numInput.value === '') return;
-        let val = parseFloat(numInput.value);
-        if (isNaN(val)) return;
-
-        let corrected = false;
-        if (field.min !== undefined && field.min !== null && field.min !== '') {
-          const minVal = parseFloat(field.min);
-          if (val < minVal) {
-            val = minVal;
-            corrected = true;
-          }
-        }
-        if (field.max !== undefined && field.max !== null && field.max !== '') {
-          const maxVal = parseFloat(field.max);
-          if (val > maxVal) {
-            val = maxVal;
-            corrected = true;
-          }
-        }
+        const initialValue = numInput.value;
+        const val = FieldConstraints.clampNumber(field, initialValue);
+        if (!Number.isFinite(Number(val))) return;
+        const corrected = String(val) !== initialValue;
 
         if (corrected) {
-          if (field.type === 'integer') {
-            val = Math.round(val);
-          }
           numInput.value = val;
           updateLiveOutput();
         }
@@ -1067,6 +1075,12 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
           loadOptionsFromUrl(field.optionsUrl, checklistContainer, finalVal);
         } else if (field.optionsFrom) {
           checklistContainer.dataset.optionsFrom = field.optionsFrom;
+          // The choices are populated later by updateDynamicDropdowns(). Keep the
+          // value used to build this field so that first population does not lose
+          // an existing selection (notably when a graph drawer is reopened).
+          checklistContainer.dataset.pendingValues = JSON.stringify(
+            Array.isArray(finalVal) ? finalVal.map(String) : []
+          );
         } else if (field.options) {
           populateChecklistChoices(checklistContainer, field.options, finalVal);
         }
@@ -1401,67 +1415,21 @@ function createFieldElement(field, parentPath = '', cachedVal = undefined) {
       const finalTxtVal = cachedVal !== undefined ? cachedVal : (field.default !== undefined ? field.default : '');
       txtInput.value = finalTxtVal;
 
-      // Apply physical constraint for max length
-      if (field.max !== undefined && field.max !== null && field.max !== '') {
-        txtInput.setAttribute('maxlength', field.max);
-      }
+      Object.entries(FieldConstraints.inputAttributes(field)).forEach(([name, value]) => {
+        txtInput.setAttribute(name, value);
+      });
 
-      const hasRegex = field.validation && field.validation.regex;
-      const hasMin = field.min !== undefined && field.min !== null && field.min !== '';
-
-      if (hasRegex || hasMin) {
+      if (field.validation?.regex || FieldConstraints.hasBound(field, 'min') || FieldConstraints.hasBound(field, 'max')) {
         const errEl = document.createElement('span');
         errEl.className = 'field-validation-error';
         errEl.setAttribute('aria-live', 'polite');
         errEl.style.display = 'none';
 
         const validateInput = () => {
-          const val = txtInput.value;
-          
-          if (val === '') {
-            if (!field.required) {
-              txtInput.classList.remove('input-invalid');
-              errEl.style.display = 'none';
-              errEl.textContent = '';
-              return;
-            } else if (!hasMin) {
-              txtInput.classList.remove('input-invalid');
-              errEl.style.display = 'none';
-              errEl.textContent = '';
-              return;
-            }
-          }
-
-          // Check min length
-          if (hasMin) {
-            const minVal = parseInt(field.min, 10);
-            if (val.length < minVal) {
-              txtInput.classList.add('input-invalid');
-              errEl.textContent = `La longueur doit être d'au moins ${minVal} caractères (actuellement ${val.length})`;
-              errEl.style.display = 'block';
-              return;
-            }
-          }
-
-          // Check regex
-          if (hasRegex) {
-            try {
-              const rx = new RegExp(field.validation.regex);
-              if (!rx.test(val)) {
-                txtInput.classList.add('input-invalid');
-                errEl.textContent = field.validation.message || `Format invalide (regex: ${field.validation.regex})`;
-                errEl.style.display = 'block';
-                return;
-              }
-            } catch (e) {
-              // invalid regex pattern — ignore silently
-            }
-          }
-
-          // Valid
-          txtInput.classList.remove('input-invalid');
-          errEl.style.display = 'none';
-          errEl.textContent = '';
+          const issue = FieldConstraints.getIssues(field, txtInput.value)[0];
+          txtInput.classList.toggle('input-invalid', !!issue);
+          errEl.textContent = issue || '';
+          errEl.style.display = issue ? 'block' : 'none';
         };
 
         txtInput.addEventListener('input', validateInput);
@@ -1812,6 +1780,9 @@ function generateOutputText() {
 // Refresh code output panel
 function updateLiveOutput() {
   if (!appSchema) return;
+  if (typeof currentMode !== 'undefined' && currentMode === 'graph') {
+    return;
+  }
 
   // Update conditional fields visibility first!
   updateConditionalFields();
@@ -1830,6 +1801,18 @@ function updateLiveOutput() {
 
   // Highlight syntax using Prism
   Prism.highlightElement(elCodeOutput);
+}
+
+function refreshGraphIfActive() {
+  if (typeof currentMode !== 'undefined' && currentMode === 'graph' && typeof graphEngine !== 'undefined' && graphEngine && appSchema) {
+    const schema = isMultiDoc ? appSchema[activeTabIndex].schema : appSchema;
+    graphEngine.init(schema);
+    const simpleFields = schema.fields ? schema.fields.filter(f => !isComplexField(f)) : [];
+    graphEngine.createGlobalNode(simpleFields);
+    const formData = extractFormData();
+    graphEngine.fromFormData(formData, schema);
+    setTimeout(() => updateGraphOutput(), 100);
+  }
 }
 
 // Copy to Clipboard Action
@@ -1957,6 +1940,7 @@ function applyImport() {
     tabDataCache[activeTabIndex] = extractFormData();
   }
   updateLiveOutput();
+  refreshGraphIfActive();
 
   // Close import panel
   toggleSyncImportDrawer(false);
@@ -2634,7 +2618,15 @@ function showSelectError(selectOrContainer, errorMessage) {
 }
 
 function updateDynamicDropdowns(formData) {
-  const containers = elFormFieldsContainer.querySelectorAll('select[data-options-from], div[data-options-from][data-field-bind="checklist"]');
+  const selectors = 'select[data-options-from], div[data-options-from][data-field-bind="checklist"]';
+  let containers = [];
+  if (elFormFieldsContainer) {
+    containers = Array.from(elFormFieldsContainer.querySelectorAll(selectors));
+  }
+  const drawerBody = document.getElementById('graph-drawer-body');
+  if (drawerBody) {
+    containers = containers.concat(Array.from(drawerBody.querySelectorAll(selectors)));
+  }
   let selectChanged = false;
   
   containers.forEach(container => {
@@ -2646,12 +2638,27 @@ function updateDynamicDropdowns(formData) {
     if (isChecklist) {
       const checkedBoxes = container.querySelectorAll('input[type="checkbox"]:checked');
       currentValue = Array.from(checkedBoxes).map(cb => cb.value);
+      // A dynamically sourced checklist has no inputs until its first refresh.
+      // Use the value captured during creation exactly once, then let the DOM
+      // selection remain the source of truth for subsequent refreshes.
+      if (currentValue.length === 0 && container.dataset.pendingValues) {
+        try {
+          const pendingValues = JSON.parse(container.dataset.pendingValues);
+          if (Array.isArray(pendingValues)) currentValue = pendingValues;
+        } catch (err) {
+          // Ignore malformed persisted UI state and fall back to an empty selection.
+        }
+      }
     } else {
       currentValue = container.value;
     }
 
     // 1. Resolve Path
-    const rawSegments = fieldPath.split(/\.|\[|\]/).filter(Boolean);
+    let cleanFieldPath = fieldPath;
+    if (isMultiDoc) {
+      cleanFieldPath = fieldPath.replace(/^tab\d+\./, '');
+    }
+    const rawSegments = cleanFieldPath.split(/\.|\[|\]/).filter(Boolean);
 
     while (rawSegments.length > 0) {
       const last = rawSegments[rawSegments.length - 1];
@@ -2706,6 +2713,7 @@ function updateDynamicDropdowns(formData) {
     // 4. Update container options
     if (isChecklist) {
       populateChecklistChoices(container, choices, currentValue);
+      delete container.dataset.pendingValues;
       const newCheckedBoxes = container.querySelectorAll('input[type="checkbox"]:checked');
       const newValue = Array.from(newCheckedBoxes).map(cb => cb.value);
       if (JSON.stringify(newValue) !== JSON.stringify(currentValue)) {
@@ -3120,6 +3128,25 @@ function buildEvalContext(formData, pathStr) {
 }
 
 function getActualFieldPath(element) {
+  const drawer = document.getElementById('graph-drawer');
+  if (drawer && drawer.contains(element)) {
+    const formGroup = element.closest('.form-group');
+    if (formGroup && formGroup.dataset.fieldPath) {
+      let path = formGroup.dataset.fieldPath;
+      if (isMultiDoc) {
+        path = path.replace(/^tab\d+\./, '');
+      }
+      return path;
+    }
+    if (element.name) {
+      let path = element.name;
+      if (isMultiDoc) {
+        path = path.replace(/^tab\d+\./, '');
+      }
+      return path;
+    }
+  }
+
   const segments = [];
   let current = element;
   
@@ -3163,9 +3190,16 @@ function getActualFieldPath(element) {
   return pathStr;
 }
 
-function updateConditionalFields() {
-  const fullData = extractFormData(true); // Extract all values including hidden fields
-  const fieldEls = elFormFieldsContainer.querySelectorAll('.form-group, .switch-container');
+function updateConditionalFields(container = elFormFieldsContainer, fullData = null) {
+  if (!fullData) {
+    if (typeof currentMode !== 'undefined' && currentMode === 'graph' && typeof graphEngine !== 'undefined') {
+      fullData = graphEngine.toFormData(true, null, graphEngine.activeDrawerNodeId, graphEngine.extractDrawerValues());
+    } else {
+      fullData = extractFormData(true);
+    }
+  }
+  
+  const fieldEls = container.querySelectorAll('.form-group, .switch-container');
   
   fieldEls.forEach(el => {
     const pathStr = getActualFieldPath(el);
@@ -3191,15 +3225,15 @@ function updateConditionalFields() {
   });
 }
 
-// ── Logic de Synchronisation Git ─────────────────────────────────────────────
-
-let gitSyncActive = false;
+// ── Logic de Synchronisation
 
 function initGitSyncUI() {
   const elBtnToggleSync = document.getElementById('btn-toggle-sync');
   const elSyncRepoUrl = document.getElementById('sync-repo-url');
   const elBtnPull = document.getElementById('btn-git-pull');
   const elBtnCommit = document.getElementById('btn-git-commit');
+  const elBtnCloseSyncTop = document.getElementById('btn-close-sync-import-top');
+  const elSyncOverlay = document.getElementById('sync-modal-overlay');
 
   if (!elBtnToggleSync) return;
 
@@ -3215,6 +3249,14 @@ function initGitSyncUI() {
   // Toggle sync container
   elBtnToggleSync.addEventListener('click', () => toggleSyncImportDrawer());
 
+  // Close sync modal handlers
+  if (elBtnCloseSyncTop) {
+    elBtnCloseSyncTop.addEventListener('click', () => toggleSyncImportDrawer(false));
+  }
+  if (elSyncOverlay) {
+    elSyncOverlay.addEventListener('click', () => toggleSyncImportDrawer(false));
+  }
+
   // Pull and Commit Actions
   if (elBtnPull) elBtnPull.addEventListener('click', handleGitPull);
   if (elBtnCommit) elBtnCommit.addEventListener('click', handleGitCommit);
@@ -3225,6 +3267,7 @@ let activeSyncImportTab = 'git'; // 'git' or 'manual'
 
 function toggleSyncImportDrawer(forceState = null) {
   const elBtnToggleSync = document.getElementById('btn-toggle-sync');
+  const elSyncOverlay = document.getElementById('sync-modal-overlay');
   if (!elSyncImportContainer) return;
 
   if (forceState !== null) {
@@ -3234,7 +3277,8 @@ function toggleSyncImportDrawer(forceState = null) {
   }
 
   if (syncImportDrawerActive) {
-    elSyncImportContainer.style.display = 'block';
+    elSyncImportContainer.style.display = 'flex';
+    if (elSyncOverlay) elSyncOverlay.style.display = 'block';
     if (elBtnToggleSync) elBtnToggleSync.classList.add('active');
     
     // Focus manual textarea if that tab is active
@@ -3243,6 +3287,7 @@ function toggleSyncImportDrawer(forceState = null) {
     }
   } else {
     elSyncImportContainer.style.display = 'none';
+    if (elSyncOverlay) elSyncOverlay.style.display = 'none';
     if (elBtnToggleSync) elBtnToggleSync.classList.remove('active');
   }
 }
@@ -3312,6 +3357,7 @@ async function handleGitPull() {
         tabDataCache[activeTabIndex] = extractFormData();
       }
       updateLiveOutput();
+      refreshGraphIfActive();
     }
   } catch (error) {
     showSyncStatus(`Erreur de Pull : ${error.message}`, "danger");
