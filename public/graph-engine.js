@@ -2571,11 +2571,11 @@ class GraphEngine {
         const current = Array.isArray(targetNode.values[fname]) ? [...targetNode.values[fname]] : [];
         current.push('');
         targetNode.values[fname] = current;
-        const body = el.querySelector('.graph-node-body');
-        if (body) {
-          body.innerHTML = this.buildGlobalFieldsHTML(simpleFields || [], targetNode.values, targetNode);
-          refreshGraphDynamicArrayChoices(el);
-        }
+        // The green node is shared by every navigation level. Re-render it
+        // through the current context instead of the root fields captured
+        // when this node was created.
+        this.renderVariablesNode();
+        refreshGraphDynamicArrayChoices(el);
         this.triggerOutputUpdate();
         return;
       }
@@ -2588,11 +2588,10 @@ class GraphEngine {
         if (!Number.isNaN(index) && index >= 0 && index < current.length) {
           current.splice(index, 1);
           targetNode.values[fname] = current;
-          const body = el.querySelector('.graph-node-body');
-          if (body) {
-            body.innerHTML = this.buildGlobalFieldsHTML(simpleFields || [], targetNode.values, targetNode);
-            refreshGraphDynamicArrayChoices(el);
-          }
+          // See the add handler above: preserve the child context after a
+          // collection edit rather than restoring the root form.
+          this.renderVariablesNode();
+          refreshGraphDynamicArrayChoices(el);
           this.triggerOutputUpdate();
         }
       }
