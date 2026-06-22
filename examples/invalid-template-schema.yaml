@@ -1,0 +1,34 @@
+title: "Schéma avec gabarit erroné"
+description: "Démonstration des erreurs de syntaxe et de structure dans outputTemplate"
+outputFormat: "yaml"
+
+outputTemplate:
+  # Erreur 1: Accolade non fermée dans la chaîne
+  cluster_name: "${env}-${project_name"
+  # Erreur 2: Expression JS invalide
+  cpu: "${worker_count *}"
+  # Erreur 3: Directive inconnue
+  unknown:
+    $repeate: 3
+    $item:
+      name: "test"
+  # Erreur 4: Directive $repeat sans $item
+  broken_loop:
+    $repeat: worker_count
+  # Erreur 5: Directive $if sans $then
+  broken_conditional:
+    $if: "env === 'prod'"
+
+fields:
+  - name: project_name
+    label: "Nom du projet"
+    type: "string"
+    default: "monprojet"
+  - name: env
+    label: "Environnement"
+    type: "string"
+    default: "dev"
+  - name: worker_count
+    label: "Nombre de VMs"
+    type: "integer"
+    default: 3

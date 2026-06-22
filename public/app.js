@@ -56,6 +56,15 @@ const elSelectGitBranch = document.getElementById('select-git-branch');
 const elConfigSelectorContainer = document.getElementById('config-selector-container');
 const elSelectConfig = document.getElementById('select-config');
 
+// Error View elements
+const elErrorView = document.getElementById('error-view');
+const elErrorMessage = document.getElementById('error-message');
+const elBtnErrorRetry = document.getElementById('btn-error-retry');
+const elModeSwitch = document.querySelector('.mode-switch');
+const elWarningsBanner = document.getElementById('warnings-banner');
+const elWarningsList = document.getElementById('warnings-list');
+const elBtnCloseWarnings = document.getElementById('btn-close-warnings');
+
 // Format Buttons
 const elFormatYaml = document.getElementById('format-yaml');
 const elFormatJson = document.getElementById('format-json');
@@ -90,6 +99,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (elBtnApplyImport) {
     elBtnApplyImport.addEventListener('click', applyImport);
+  }
+  if (elBtnErrorRetry) {
+    elBtnErrorRetry.addEventListener('click', () => {
+      loadConfig(false);
+    });
+  }
+  if (elBtnCloseWarnings && elWarningsBanner) {
+    elBtnCloseWarnings.addEventListener('click', () => {
+      elWarningsBanner.style.display = 'none';
+    });
   }
 
   elSelectGitBranch.addEventListener('change', () => {
@@ -149,9 +168,114 @@ async function loadApplicationVersion() {
   }
 }
 
+// Toggle UI views on success or error of loading schema config
+function updateUIForError(error) {
+  const mainView = document.getElementById('main-form-view');
+  const graphView = document.getElementById('graph-view');
+  if (mainView) mainView.style.display = 'none';
+  if (graphView) graphView.classList.remove('active');
+
+  if (elModeSwitch) {
+    elModeSwitch.classList.add('disabled');
+  }
+
+  displayWarnings([]); // Hide warnings on fatal error
+
+  if (elErrorView && elErrorMessage) {
+    elErrorMessage.textContent = error.message || String(error);
+    elErrorView.style.display = 'flex';
+  }
+}
+
+function updateUIForSuccess() {
+  if (elErrorView) {
+    elErrorView.style.display = 'none';
+  }
+
+  if (elModeSwitch) {
+    elModeSwitch.classList.remove('disabled');
+  }
+
+  const mainView = document.getElementById('main-form-view');
+  const graphView = document.getElementById('graph-view');
+
+  if (typeof currentMode !== 'undefined') {
+    if (currentMode === 'graph') {
+      if (mainView) mainView.style.display = 'none';
+      if (graphView) graphView.classList.add('active');
+    } else {
+      if (graphView) graphView.classList.remove('active');
+      if (mainView) mainView.style.display = '';
+    }
+  } else {
+    // Default fallback: check which one is active by class, otherwise show form
+    const isGraphActive = graphView && graphView.classList.contains('active');
+    if (isGraphActive) {
+      if (mainView) mainView.style.display = 'none';
+    } else {
+      if (mainView) mainView.style.display = '';
+    }
+  }
+}
+
+function displayWarnings(warnings) {
+  if (!elWarningsBanner || !elWarningsList) return;
+
+  if (warnings && Array.isArray(warnings) && warnings.length > 0) {
+    elWarningsList.innerHTML = '';
+    warnings.forEach(warning => {
+      const li = document.createElement('li');
+      li.textContent = warning;
+      elWarningsList.appendChild(li);
+    });
+    elWarningsBanner.style.display = 'block';
+  } else {
+    elWarningsBanner.style.display = 'none';
+    elWarningsList.innerHTML = '';
+  }
+}
+
 // Load Config Schema from Backend API
 async function loadConfig(forceRefresh = false) {
   setLoadingState(true);
+
+  if (elErrorView) {
+    elErrorView.style.display = 'none';
+  }
+  if (elModeSwitch) {
+    elModeSwitch.classList.remove('disabled');
+  }
+  displayWarnings([]); // Clear warnings on reload
+
+  // Restore visual spinner state inside form view in case we reload after an error
+  if (elFormFieldsContainer) {
+    elFormFieldsContainer.innerHTML = `
+      <div class="loading-spinner-container">
+        <div class="spinner"></div>
+        <p>Génération du formulaire...</p>
+      </div>
+    `;
+  }
+
+  // Temporary display restoration for the loading phase
+  const mainView = document.getElementById('main-form-view');
+  const graphView = document.getElementById('graph-view');
+  if (typeof currentMode !== 'undefined') {
+    if (currentMode === 'graph') {
+      if (mainView) mainView.style.display = 'none';
+      if (graphView) graphView.classList.add('active');
+    } else {
+      if (graphView) graphView.classList.remove('active');
+      if (mainView) mainView.style.display = '';
+    }
+  } else {
+    if (graphView && graphView.classList.contains('active')) {
+      if (mainView) mainView.style.display = 'none';
+    } else {
+      if (mainView) mainView.style.display = '';
+    }
+  }
+
   try {
     const urlParams = new URLSearchParams(window.location.search);
     const currentConfigId = urlParams.get('config') || '';
@@ -232,17 +356,12 @@ async function loadConfig(forceRefresh = false) {
     clearConfigDirty();
 
     setStatus('Prêt', 'green');
+    updateUIForSuccess();
+    displayWarnings(result.warnings);
   } catch (error) {
     console.error('Error loading schema:', error);
     setStatus('Erreur de chargement', 'orange');
-    elFormFieldsContainer.innerHTML = `
-      <div class="loading-spinner-container">
-        <div class="icon" style="font-size: 40px; color: var(--color-danger)">⚠️</div>
-        <p style="color: var(--color-danger); font-weight: 600;">Erreur de chargement du schéma</p>
-        <p class="form-desc">${error.message}</p>
-        <button class="btn btn-secondary btn-sm" onclick="loadConfig(false)">Réessayer</button>
-      </div>
-    `;
+    updateUIForError(error);
   } finally {
     setLoadingState(false);
   }
@@ -3374,6 +3493,7 @@ async function handleGitPull() {
       }
       updateLiveOutput();
       refreshGraphIfActive();
+      displayWarnings(result.warnings);
     }
   } catch (error) {
     showSyncStatus(`Erreur de Pull : ${error.message}`, "danger");

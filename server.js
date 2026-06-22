@@ -8,6 +8,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const parser = require('./lib/parser');
+const schemaValidator = require('./lib/schema_validator');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -268,6 +269,7 @@ function fetchUrlContent(urlStr, ignoreSsl = false, customHeaders = {}) {
 function parseYamlDocs(fileContent) {
   const docsText = fileContent.split(/^---$/m);
   const parsedDocs = [];
+  const warnings = [];
 
   docsText.forEach((docText, index) => {
     const trimmed = docText.trim();
@@ -297,35 +299,48 @@ function parseYamlDocs(fileContent) {
       }
     } catch (e) {
       console.warn(`[YAML] Failed to parse document index ${index}:`, e.message);
+      warnings.push(`[Document index ${index}] ${e.message}`);
     }
   });
 
-  if (parsedDocs.length > 1) {
-    return { data: parsedDocs, isMultiDoc: true, format: 'yaml' };
-  } else if (parsedDocs.length === 1) {
-    return { data: parsedDocs[0].schema, isMultiDoc: false, format: 'yaml' };
-  } else {
-    return { data: {}, isMultiDoc: false, format: 'yaml' };
-  }
+  const hasDocs = parsedDocs.length > 1;
+  parsedDocs.forEach(doc => {
+    const docPrefix = hasDocs ? `[${doc.tabName}]` : '';
+    const schemaWarnings = schemaValidator.validateYamlSchema(doc.schema, docPrefix);
+    warnings.push(...schemaWarnings);
+  });
+
+  return {
+    data: hasDocs ? parsedDocs : (parsedDocs.length === 1 ? parsedDocs[0].schema : {}),
+    isMultiDoc: hasDocs,
+    format: 'yaml',
+    warnings: warnings
+  };
 }
 
 function parseConfigContent(fileContent, filePathOrUrl) {
   const ext = path.extname(filePathOrUrl || '').toLowerCase().split('?')[0];
 
   if (ext === '.tf') {
-    return { data: parser.parseTerraformVariables(fileContent), format: 'hcl', isMultiDoc: false };
+    const parsed = parser.parseTerraformVariables(fileContent);
+    return { data: parsed, format: 'hcl', isMultiDoc: false, warnings: parsed.warnings || [] };
   } else if (ext === '.yaml' || ext === '.yml') {
     return parseYamlDocs(fileContent);
   } else if (ext === '.json') {
-    return { data: JSON.parse(fileContent), format: 'json', isMultiDoc: false };
+    try {
+      return { data: JSON.parse(fileContent), format: 'json', isMultiDoc: false, warnings: [] };
+    } catch (e) {
+      return { data: {}, format: 'json', isMultiDoc: false, warnings: [`Erreur de syntaxe JSON : ${e.message}`] };
+    }
   }
 
   // Fallback detection by content
   if (fileContent.includes('variable')) {
-    return { data: parser.parseTerraformVariables(fileContent), format: 'hcl', isMultiDoc: false };
+    const parsed = parser.parseTerraformVariables(fileContent);
+    return { data: parsed, format: 'hcl', isMultiDoc: false, warnings: parsed.warnings || [] };
   } else {
     try {
-      return { data: JSON.parse(fileContent), format: 'json', isMultiDoc: false };
+      return { data: JSON.parse(fileContent), format: 'json', isMultiDoc: false, warnings: [] };
     } catch {
       return parseYamlDocs(fileContent);
     }
@@ -402,7 +417,7 @@ async function loadSchemaData({ sourceType, localPath, gitRepoUrl, gitBranch, gi
     resolvedConfigPath = 'values.yaml';
   }
 
-  const { data, format, isMultiDoc } = parseConfigContent(fileContent, resolvedPath);
+  const { data, format, isMultiDoc, warnings } = parseConfigContent(fileContent, resolvedPath);
 
   return {
     success: true,
@@ -413,6 +428,7 @@ async function loadSchemaData({ sourceType, localPath, gitRepoUrl, gitBranch, gi
     gitBranch: loadedGitBranch,
     format: format,
     configPath: resolvedConfigPath,
+    warnings: warnings || [],
     loadedAt: new Date().toISOString()
   };
 }
@@ -777,6 +793,7 @@ app.post('/api/sync/pull', async (req, res) => {
 
     let parsedData = null;
     let mode = 'classic';
+    let warnings = [];
 
     if (fs.existsSync(abstractFullPath)) {
       console.log(`[Git Pull] Abstract values file found at ${abstractFullPath}`);
@@ -794,6 +811,7 @@ app.post('/api/sync/pull', async (req, res) => {
         const parsed = parseConfigContent(fileContent, targetFullPath);
         parsedData = parsed.data;
         mode = 'classic';
+        warnings = parsed.warnings || [];
       } catch (parseErr) {
         throw new Error(`Erreur de parsing du fichier cible ${targetPath} : ${parseErr.message}`);
       }
@@ -810,7 +828,8 @@ app.post('/api/sync/pull', async (req, res) => {
     res.json({
       success: true,
       data: parsedData,
-      mode: mode
+      mode: mode,
+      warnings: warnings
     });
 
   } catch (error) {

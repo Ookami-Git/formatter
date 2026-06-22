@@ -1264,4 +1264,120 @@ code[class*="language-"] {
   animation: fadeIn var(--transition-fast) ease-out;
 }
 
+/* ── Vue d'erreur globale ── */
+.error-view {
+  flex: 1;
+  display: none; /* Géré par le JS */
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background-color: var(--bg-app);
+}
+
+.error-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-lg);
+  padding: 40px;
+  max-width: 600px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 16px 48px rgba(239, 68, 68, 0.15);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  animation: fadeIn var(--transition-normal) ease-out;
+}
+
+.error-icon {
+  font-size: 48px;
+  margin-bottom: 20px;
+}
+
+.error-card h2 {
+  color: var(--text-main);
+  font-size: 1.5rem;
+  margin-bottom: 12px;
+  font-weight: 700;
+}
+
+.error-message {
+  color: #fca5a5;
+  background-color: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin-bottom: 24px;
+  text-align: left;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Griser le sélecteur de mode en cas d'erreur */
+.mode-switch.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+  cursor: not-allowed;
+}
+
+/* ── Warnings Banner ── */
+.warnings-banner {
+  background-color: rgba(245, 158, 11, 0.12);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 12px 32px;
+  color: #fdba74;
+  font-size: 0.82rem;
+  z-index: 9;
+  animation: slideIn var(--transition-fast) ease-out;
+}
+
+.warnings-banner-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.warning-icon {
+  font-size: 1rem;
+}
+
+.warning-title {
+  flex: 1;
+}
+
+.btn-close-warnings {
+  background: transparent;
+  border: none;
+  color: rgba(253, 186, 116, 0.7);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+  transition: all var(--transition-fast);
+}
+
+.btn-close-warnings:hover {
+  color: #fff;
+  background: rgba(245, 158, 11, 0.2);
+}
+
+.warnings-list {
+  list-style-type: disc;
+  margin: 8px auto 0 auto;
+  padding-left: 20px;
+  max-width: 1600px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  color: #fed7aa;
+}
+
 
