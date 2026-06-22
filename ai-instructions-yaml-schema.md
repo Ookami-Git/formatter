@@ -92,35 +92,252 @@ Chaque élément du tableau `fields` peut avoir les propriétés suivantes :
 
 ## 🔄 4. Le Moteur d'Abstraction (`outputTemplate`)
 
-La présence de `outputTemplate` à la racine dissocie le formulaire d'entrée de la sortie générée. Le gabarit est évalué récursivement et supporte les directives suivantes :
+La présence de `outputTemplate` à la racine dissocie le formulaire d'entrée de la sortie générée. Le gabarit est évalué récursivement et supporte les directives suivantes.
 
-### 1. Expressions et Interpolation : `${...}`
+**Liste exhaustive des directives reconnues par le moteur :** `$repeat`, `$item`, `$key`, `$merge`, `$if`, `$then`, `$else`, `$value`.
+
+Toute clé commençant par `$` qui ne fait pas partie de cette liste sera signalée comme une erreur.
+
+---
+
+### 4.1 Expressions et Interpolation : `${...}`
 Toutes les chaînes contenant `${...}` sont évaluées comme du JavaScript en utilisant les valeurs saisies dans le formulaire :
 *   Accès simple : `${project_name}`
 *   Accès imbriqué : `${dns_config.primary_server}`
 *   Calculs : `${worker_count * cpu_per_worker}`
 *   Ternaires : `${_index === 0 ? 'primary' : 'replica'}`
-*   *Note de préservation* : Si la valeur est exactement une expression (ex: `"${worker_count}"`), le type d'origine (nombre, booléen) est préservé dans la sortie finale au lieu d'être converti en texte.
+*   Accès tableau : `${availability_zones[_index % availability_zones.length]}`
+*   *Note de préservation de type* : Si la valeur entière est exactement une expression (ex: `"${worker_count}"`), le type d'origine (nombre, booléen, tableau) est préservé dans la sortie finale au lieu d'être converti en texte. Pour de l'interpolation mixte (ex: `"vm-${_index + 1}"`), le résultat est toujours une chaîne.
 
-### 2. Directive Conditionnelle : `$if`
-Inclus ou exclut une structure selon une condition.
-*   `$if` (`string` ou `boolean`) : Expression à évaluer.
-*   `$then` (`any`) : Structure ou valeur à générer si la condition est vraie.
-*   `$else` (`any`, Optionnel) : Structure ou valeur à générer si la condition est fausse (si non défini, la propriété parente est exclue du rendu final).
+---
 
-### 3. Directive de Répétition : `$repeat`
+### 4.2 Directive Conditionnelle : `$if` / `$then` / `$else`
+
+Inclut ou exclut une structure selon une condition.
+
+*   `$if` (`string` ou `boolean`) : Expression à évaluer. Peut être :
+    *   Un nom de champ simple (ex: `enable_ssl`) : évalué comme truthy/falsy.
+    *   Une expression JS complète (ex: `"env === 'prod'"`, `"count > 3"`).
+*   `$then` (`any`, **Requis** si `$if` est présent) : Structure ou valeur à générer si la condition est vraie.
+*   `$else` (`any`, Optionnel) : Structure ou valeur à générer si la condition est fausse.
+
+**Règles de comportement selon le contexte :**
+
+#### `$if` utilisé comme **valeur d'une clé d'objet** :
+Si la condition est fausse et qu'il n'y a pas de `$else`, la clé parente est **entièrement supprimée** de la sortie.
+
+```yaml
+# Exemple : la clé "backup_config" disparaît si enable_backup est falsy
+outputTemplate:
+  main_config:
+    name: "${app_name}"
+    backup_config:
+      $if: enable_backup
+      $then:
+        enabled: true
+        path: "/backup"
+```
+
+#### `$if` utilisé comme **élément d'un tableau** :
+Si la condition est fausse et qu'il n'y a pas de `$else`, l'élément est **retiré du tableau** (pas de `null` inséré).
+
+```yaml
+# Exemple : l'élément backup-subnet n'apparaît dans le tableau QUE si add_backup est truthy
+outputTemplate:
+  network_interfaces:
+    - network_name: "default-subnet"
+      ip_address: "auto"
+    - $if: add_backup
+      $then:
+        network_name: "backup-subnet"
+        ip_address: "dhcp"
+```
+
+**Règle de truthy/falsy :** `null`, `undefined`, `false`, `0`, `""` (chaîne vide), `[]` (tableau vide), et `{}` (objet vide) sont tous considérés comme **falsy**. Tout le reste est **truthy**.
+
+---
+
+### 4.3 Directive de Répétition : `$repeat` / `$item` / `$key`
+
 Génère une boucle d'objets ou de valeurs.
-*   `$repeat` (`string` ou `number`) : Le nombre d'itérations, sous forme d'un nombre brut, d'un nom de champ ou d'une expression (ex: `worker_count` ou `"${worker_count + 1}"`).
-*   `$item` (`any`, **Requis**) : Le modèle d'objet ou valeur à instancier à chaque itération.
-*   `$key` (`string`, Optionnel) : Si fourni, l'itération produit un **dictionnaire/objet** au lieu d'un tableau. La clé est évaluée dynamiquement pour chaque élément (ex: `"server-${_index + 1}"`).
 
-### Variables Spéciales de Boucle (accessibles dans `$item` et `$key`) :
+*   `$repeat` (`string` ou `number`, **Requis**) : Le nombre d'itérations, sous forme de :
+    *   Un nombre brut : `$repeat: 3`
+    *   Un nom de champ : `$repeat: worker_count`
+    *   Un chemin imbriqué entre guillemets : `$repeat: "cp_template.quantite"`
+    *   Une expression entre guillemets : `$repeat: "${worker_count + 1}"`
+*   `$item` (`any`, **Requis** avec `$repeat`) : Le modèle d'objet ou valeur à instancier à chaque itération.
+*   `$key` (`string`, Optionnel) : Si fourni, l'itération produit un **objet/dictionnaire** au lieu d'un tableau. La clé est évaluée dynamiquement pour chaque élément (ex: `"server-${_index + 1}"`).
+
+**Résumé du comportement de sortie :**
+*   `$repeat` + `$item` (sans `$key`) → produit un **tableau** `[item0, item1, ...]`
+*   `$repeat` + `$item` + `$key` → produit un **objet/dictionnaire** `{ "clé0": item0, "clé1": item1, ... }`
+
+#### Variables Spéciales de Boucle (accessibles dans `$item` et `$key`) :
 *   `_index` : Index 0-based de l'itération courante (`0, 1, 2...`).
 *   `_count` : Nombre total d'itérations programmées dans la boucle.
 
 ---
 
-## 📑 5. Documents Multiples (Multi-documents YAML)
+### 4.4 Directive de Fusion : `$merge`
+
+**Cas d'usage critique :** Quand vous devez combiner **plusieurs boucles `$repeat`** (ou plusieurs blocs d'objets) dans **un seul et même objet/dictionnaire**.
+
+*   `$merge` (`array`, **Requis**) : Un tableau de blocs. Chaque bloc est traité individuellement (peut être un `$repeat` avec `$key`, un objet ordinaire, etc.), puis tous les résultats sont fusionnés en un seul objet plat via `Object.assign`.
+
+```yaml
+# Exemple : Fusionner les Control Planes et les Workers en un seul dictionnaire "vms"
+outputTemplate:
+  vms:
+    $merge:
+      # Bloc 1 : génère { "cp-0": {...}, "cp-1": {...}, "cp-2": {...} }
+      - $repeat: cp_count
+        $key: "cp-${_index}"
+        $item:
+          role: "controlplane"
+          cpu: "${cp_cpu}"
+
+      # Bloc 2 : génère { "wk-0": {...}, "wk-1": {...} }
+      - $repeat: worker_count
+        $key: "wk-${_index}"
+        $item:
+          role: "worker"
+          cpu: "${worker_cpu}"
+
+# Résultat fusionné :
+# vms:
+#   cp-0: { role: "controlplane", cpu: 4 }
+#   cp-1: { role: "controlplane", cpu: 4 }
+#   cp-2: { role: "controlplane", cpu: 4 }
+#   wk-0: { role: "worker", cpu: 8 }
+#   wk-1: { role: "worker", cpu: 8 }
+```
+
+**Contrainte importante :** `$merge` ne fusionne que des **objets** (dictionnaires). Chaque bloc du tableau `$merge` doit produire un objet (pas un tableau). Utilisez donc `$key` avec `$repeat` à l'intérieur d'un `$merge`.
+
+---
+
+### 4.5 Directive de Valeur Directe : `$value`
+
+Résout directement une expression et retourne sa valeur brute. Utile pour les cas où la valeur de sortie est une expression qui ne peut pas être écrite comme une simple interpolation de chaîne.
+
+*   `$value` (`string`) : Expression à évaluer.
+
+```yaml
+outputTemplate:
+  computed_total:
+    $value: "worker_count * cpu_per_node"
+```
+
+---
+
+## ⚠️ 5. Règles Critiques et Erreurs Courantes
+
+Cette section liste les erreurs les plus fréquentes commises lors de la génération de schémas. **Lisez attentivement chaque règle avant de générer un schéma.**
+
+### Règle 1 : Ne JAMAIS utiliser deux tableaux à la suite pour fusionner des résultats
+
+**❌ INTERDIT — Ceci est invalide en YAML et ne fonctionne pas :**
+```yaml
+# ERREUR : Deux tableaux assignés à la même clé "vms"
+outputTemplate:
+  vms:
+    $repeat: cp_count
+    $key: "cp-${_index}"
+    $item:
+      role: "controlplane"
+  vms:   # ← ERREUR : clé dupliquée, YAML écrase la première
+    $repeat: worker_count
+    $key: "wk-${_index}"
+    $item:
+      role: "worker"
+```
+
+**✅ CORRECT — Utiliser `$merge` pour combiner plusieurs boucles :**
+```yaml
+outputTemplate:
+  vms:
+    $merge:
+      - $repeat: cp_count
+        $key: "cp-${_index}"
+        $item:
+          role: "controlplane"
+      - $repeat: worker_count
+        $key: "wk-${_index}"
+        $item:
+          role: "worker"
+```
+
+### Règle 2 : `$repeat` nécessite toujours `$item`
+
+**❌ INTERDIT :**
+```yaml
+servers:
+  $repeat: count
+  hostname: "server-${_index}"  # ERREUR : pas de $item
+```
+
+**✅ CORRECT :**
+```yaml
+servers:
+  $repeat: count
+  $item:
+    hostname: "server-${_index}"
+```
+
+### Règle 3 : `$if` nécessite toujours `$then`
+
+**❌ INTERDIT :**
+```yaml
+backup_path:
+  $if: enable_backup
+  value: "/backup"  # ERREUR : pas de $then
+```
+
+**✅ CORRECT :**
+```yaml
+backup_path:
+  $if: enable_backup
+  $then: "/backup"
+```
+
+### Règle 4 : Les directives `$` ne doivent PAS être mélangées avec des clés ordinaires au même niveau
+
+**❌ INTERDIT :**
+```yaml
+servers:
+  $repeat: count
+  $item:
+    hostname: "server-${_index}"
+  extra_key: "value"  # ERREUR : mélange de directives et de clés ordinaires
+```
+
+### Règle 5 : Échappement des expressions YAML ambiguës
+
+Les valeurs qui commencent par `${` ou qui contiennent des caractères spéciaux YAML (`:`, `#`, `{`, `}`, `[`, `]`) doivent être entre guillemets :
+
+```yaml
+# ✅ CORRECT
+hostname: "${env}-server-${_index}"
+
+# ❌ ERREUR — YAML interprète le { comme un objet
+hostname: ${env}-server-${_index}
+```
+
+### Règle 6 : `$repeat` avec un chemin imbriqué doit être entre guillemets
+
+```yaml
+# ✅ CORRECT — Le chemin est entre guillemets
+$repeat: "cp_template.quantite"
+
+# ❌ ERREUR — YAML interprète le point comme un texte ordinaire sans guillemets
+# Cela fonctionnerait quand même car c'est traité comme une expression,
+# mais les guillemets sont la bonne pratique pour les chemins imbriqués.
+```
+
+---
+
+## 📑 6. Documents Multiples (Multi-documents YAML)
 
 L'application supporte le partitionnement de configurations complexes en plusieurs onglets (onglets horizontaux dans l'interface).
 Pour ce faire, séparez les documents YAML par un séparateur de document standard `---`.
@@ -131,7 +348,25 @@ Ce commentaire permet de donner un titre personnalisé à l'onglet dans l'interf
 
 ---
 
-## 📝 6. Exemples Complets à Copier-Coller
+## 📋 7. Référence Rapide des Directives
+
+| Directive | Requis avec | Produit | Description |
+|:---|:---|:---|:---|
+| `$repeat` | `$item` | tableau ou objet | Itère N fois. Produit un tableau sauf si `$key` est fourni. |
+| `$item` | `$repeat` | — | Template de chaque élément d'une itération. |
+| `$key` | `$repeat` | — | Clé dynamique → transforme le tableau en objet/dictionnaire. |
+| `$merge` | — | objet | Fusionne un tableau de blocs en un seul dictionnaire. |
+| `$if` | `$then` | — | Condition d'inclusion d'un bloc. |
+| `$then` | `$if` | any | Valeur/structure si la condition est vraie. |
+| `$else` | `$if` | any | Valeur/structure si la condition est fausse (optionnel). |
+| `$value` | — | any | Résolution directe d'une expression JavaScript. |
+| `${expr}` | — | string ou type préservé | Interpolation dans les chaînes de caractères. |
+
+**Variables de boucle :** `_index` (0-based), `_count` (total d'itérations).
+
+---
+
+## 📝 8. Exemples Complets à Copier-Coller
 
 ### Exemple 1 : Schéma SANS `outputTemplate` (Input = Output)
 Le document de sortie correspondra exactement aux champs saisis.
@@ -191,12 +426,13 @@ fields:
 
 ---
 
-### Exemple 2 : Schéma AVEC `outputTemplate` (Structure Découplée)
-Le formulaire demande quelques paramètres simples, mais la sortie finale est restructurée.
+### Exemple 2 : Schéma AVEC `outputTemplate` — Toutes les directives
+
+Cet exemple démontre l'utilisation de **toutes les directives** du moteur : `$repeat`, `$item`, `$key`, `$merge`, `$if`/`$then`/`$else`, et l'interpolation `${...}`.
 
 ```yaml
 title: "Déploiement de Grappe de VM"
-description: "Génère l'infrastructure complète d'un cluster cloud."
+description: "Génère l'infrastructure complète d'un cluster cloud avec CP et Workers fusionnés."
 outputFormat: "yaml"
 
 # ============================================================
@@ -207,8 +443,8 @@ outputTemplate:
   creation_metadata:
     environment: "${env_type}"
     total_cpu_allocated: "${nodes_count * cpu_per_node}"
-  
-  # Génération d'une liste de VMs
+
+  # ── $repeat + $item (sans $key) → produit un TABLEAU ─────────
   virtual_machines:
     $repeat: nodes_count
     $item:
@@ -216,19 +452,18 @@ outputTemplate:
       role: "${_index === 0 ? 'primary-controller' : 'worker-node'}"
       specs:
         cpu: "${cpu_per_node}"
-        ram_gb: "${cpu_per_node * 4}" # RAM = CPU * 4
-      
-      # Réseau additionnel si sélectionné
+        ram_gb: "${cpu_per_node * 4}"
+
+      # $if dans un tableau : l'élément est retiré si la condition est fausse
       network_interfaces:
         - network_name: "default-subnet"
           ip_address: "auto"
-        # Ajout conditionnel d'un réseau de backup
         - $if: add_backup_network
           $then:
             network_name: "backup-subnet"
             ip_address: "dhcp"
 
-  # Génération d'une carte d'utilisateurs associés (indexé par leur nom)
+  # ── $repeat + $item + $key → produit un DICTIONNAIRE ─────────
   system_users:
     $repeat: nodes_count
     $key: "user-node-${_index + 1}"
@@ -236,6 +471,32 @@ outputTemplate:
       username: "admin-node-${_index + 1}"
       ssh_keys:
         - "${ssh_key}"
+
+  # ── $merge → fusionne PLUSIEURS boucles en UN SEUL dictionnaire ─
+  all_nodes:
+    $merge:
+      # Bloc 1 : Control Planes
+      - $repeat: cp_count
+        $key: "${env_type}-${cluster_name}-cp-${_index}"
+        $item:
+          role: "controlplane"
+          cpu: "${cpu_per_node}"
+
+      # Bloc 2 : Workers
+      - $repeat: nodes_count
+        $key: "${env_type}-${cluster_name}-wk-${_index}"
+        $item:
+          role: "worker"
+          cpu: "${cpu_per_node}"
+
+  # ── $if/$then/$else en tant que valeur d'une clé ──────────────
+  ssl_config:
+    $if: "env_type === 'prod'"
+    $then:
+      enabled: true
+      cert_path: "/etc/ssl/certs/${cluster_name}.pem"
+    $else:
+      enabled: false
 
 # ============================================================
 # FIELDS (Définit les éléments du formulaire saisis par l'utilisateur)
@@ -259,6 +520,13 @@ fields:
     default: 3
     min: 1
     max: 10
+
+  - name: cp_count
+    label: "Nombre de Control Planes"
+    type: "integer"
+    default: 3
+    min: 1
+    max: 5
 
   - name: cpu_per_node
     label: "vCPU par noeud"
