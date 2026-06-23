@@ -870,6 +870,96 @@ helm install my-formatter oci://ghcr.io/<owner>/charts/formatter --version 1.2.3
 
 ---
 
+## 🔌 API REST de formatage
+
+L'application expose une API REST permettant de formater des données brutes en utilisant soit un schéma fourni en direct, soit une configuration préconfigurée sur le serveur.
+
+### Formater des données (`POST /api/format`)
+
+Permet de formater des données brutes du formulaire. Les paramètres peuvent être passés soit en Query String dans l'URL (pratique pour l'intégration programmatique), soit dans le corps de la requête.
+
+**En-tête de requête :**
+- `Content-Type: application/json`
+
+**Paramètres Query String ou corps JSON :**
+
+| Propriété | Type | Description |
+|---|---|---|
+| `config` ou `configId` | `string` | *(Optionnel)* ID de la configuration préconfigurée sur le serveur (ex: `"schema"`). |
+| `schema` | `object` ou `string` | *(Optionnel, corps uniquement)* Schéma brut au format JSON ou YAML (string). Utilisé si aucun `config` n'est fourni. |
+| `format` | `string` | *(Optionnel)* Format de sortie désiré (`"yaml"`, `"json"`, `"hcl"` / `"tfvars"`). Par défaut, utilise le format détecté ou `"yaml"`. |
+| `keepEmpty` | `boolean` | *(Optionnel)* Si `true` (ou `"true"` en query), conserve les valeurs vides. Par défaut (`false`), les valeurs vides sont nettoyées récursivement. |
+
+**Données du formulaire (Input) :**
+- Les variables d'entrée peuvent être enveloppées dans une propriété `input`, `data` ou `formData` dans le corps JSON.
+- **Alternative (Recommandée) :** Si aucune de ces propriétés enveloppes n'est présente, le corps JSON est traité **directement à sa racine** comme le dictionnaire de valeurs du formulaire (les propriétés comme `config`, `schema`, etc. sont ignorées automatiquement).
+- **Fusion automatique des valeurs par défaut :** L'API extrait automatiquement toutes les valeurs par défaut définies dans le schéma (y compris les objets complexes imbriqués) et les fusionne récursivement (deep merge) avec les valeurs fournies en entrée. Les valeurs manquantes sont ainsi pré-remplies selon les valeurs par défaut du schéma.
+
+#### Exemple 1 : Appel avec paramètres en Query String et JSON à la racine
+**Requête :**
+`POST http://localhost:3000/api/format?config=schema&format=yaml`
+
+**Corps (JSON) :**
+```json
+{
+  "appName": "mon-app",
+  "replicaCount": 3,
+  "enableIngress": false
+}
+```
+
+**Réponse (MIME `text/yaml`) :**
+```yaml
+appName: mon-app
+replicaCount: 3
+port: 8080
+environment: production
+imageTag: latest
+enableIngress: false
+resources:
+  cpuLimit: 500m
+  memoryLimit: 512Mi
+```
+
+#### Exemple 2 : Appel avec enveloppe JSON complète dans le corps
+**Requête :**
+`POST http://localhost:3000/api/format`
+
+**Corps (JSON) :**
+```json
+{
+  "schema": {
+    "outputTemplate": {
+      "cluster": "${env}-${name}",
+      "replicas": "${count}"
+    }
+  },
+  "input": {
+    "env": "prod",
+    "name": "api",
+    "count": 2
+  },
+  "format": "json"
+}
+```
+
+**Réponse (MIME `application/json`) :**
+```json
+{
+  "cluster": "prod-api",
+  "replicas": 2
+}
+```
+
+#### Exemple de réponse en cas d'erreur (Code HTTP `400` ou `500`)
+```json
+{
+  "error": "Configuration 'invalide' non trouvée."
+}
+```
+
+---
+
 ## 📁 Structure du projet
 
 ```

@@ -589,6 +589,309 @@ app.get('/api/config', async (req, res) => {
   }
 });
 
+// Helper to pre-populate default schema values recursively
+function getDefaultValues(fields) {
+  const defaults = {};
+  if (!fields || !Array.isArray(fields)) return defaults;
+
+  fields.forEach(field => {
+    if (field.type === 'object') {
+      if (field.dynamicKeys) {
+        defaults[field.name] = field.default !== undefined ? field.default : {};
+      } else {
+        defaults[field.name] = getDefaultValues(field.fields);
+      }
+    } else if (field.type === 'array') {
+      if (field.default !== undefined) {
+        defaults[field.name] = field.default;
+      } else {
+        defaults[field.name] = [];
+      }
+    } else {
+      if (field.default !== undefined) {
+        defaults[field.name] = field.default;
+      }
+    }
+  });
+  return defaults;
+}
+
+// Helper to deep merge default values with user input
+function mergeDeep(target, source) {
+  if (typeof target !== 'object' || target === null) return source;
+  if (typeof source !== 'object' || source === null) return target;
+
+  const output = { ...target };
+
+  for (const key of Object.keys(source)) {
+    if (source[key] !== undefined) {
+      if (typeof source[key] === 'object' && source[key] !== null && !Array.isArray(source[key])) {
+        if (target[key] !== undefined && typeof target[key] === 'object' && target[key] !== null && !Array.isArray(target[key])) {
+          output[key] = mergeDeep(target[key], source[key]);
+        } else {
+          output[key] = source[key];
+        }
+      } else {
+        output[key] = source[key];
+      }
+    }
+  }
+  return output;
+}
+
+// Helper to clean empty values from objects
+function cleanEmptyValues(obj) {
+  if (Array.isArray(obj)) {
+    return obj
+      .map(item => (item && typeof item === 'object') ? cleanEmptyValues(item) : item)
+      .filter(item => {
+        if (item === undefined || item === null || item === '') return false;
+        if (Array.isArray(item) && item.length === 0) return false;
+        if (typeof item === 'object' && Object.keys(item).length === 0) return false;
+        return true;
+      });
+  } else if (typeof obj === 'object' && obj !== null) {
+    const cleaned = {};
+    for (const [key, value] of Object.entries(obj)) {
+      if (value === undefined || value === null || value === '') {
+        continue;
+      }
+      if (Array.isArray(value) && value.length === 0) {
+        continue;
+      }
+      if (typeof value === 'object') {
+        const cleanedVal = cleanEmptyValues(value);
+        if (cleanedVal === undefined || cleanedVal === null) continue;
+        if (Array.isArray(cleanedVal) && cleanedVal.length === 0) continue;
+        if (typeof cleanedVal === 'object' && Object.keys(cleanedVal).length === 0) continue;
+        cleaned[key] = cleanedVal;
+        continue;
+      }
+      cleaned[key] = value;
+    }
+    return cleaned;
+  }
+  return obj;
+}
+
+// Helper to escape HCL string
+function escapeHclString(str) {
+  return str.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+}
+
+// Convert object data to HCL format
+function toHCL(obj, indent = 0) {
+  const spaces = '  '.repeat(indent);
+  let hcl = '';
+
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === undefined || value === null) {
+      continue;
+    }
+
+    const hclKey = key;
+
+    if (typeof value === 'boolean') {
+      hcl += `${spaces}${hclKey} = ${value}\n`;
+    } else if (typeof value === 'number') {
+      hcl += `${spaces}${hclKey} = ${value}\n`;
+    } else if (typeof value === 'string') {
+      hcl += `${spaces}${hclKey} = "${escapeHclString(value)}"\n`;
+    } else if (Array.isArray(value)) {
+      if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null) {
+        hcl += `${spaces}${hclKey} = [\n`;
+        value.forEach((item, index) => {
+          hcl += `${spaces}  {\n`;
+          hcl += toHCL(item, indent + 2);
+          hcl += `${spaces}  }${index < value.length - 1 ? ',' : ''}\n`;
+        });
+        hcl += `${spaces}]\n`;
+      } else {
+        const itemsStr = value.map(val => {
+          if (typeof val === 'string') return `"${escapeHclString(val)}"`;
+          return val;
+        }).join(', ');
+        hcl += `${spaces}${hclKey} = [${itemsStr}]\n`;
+      }
+    } else if (typeof value === 'object') {
+      hcl += `${spaces}${hclKey} = {\n`;
+      hcl += toHCL(value, indent + 1);
+      hcl += `${spaces}}\n`;
+    }
+  }
+  return hcl;
+}
+
+// Endpoint to format data based on a configuration or a provided schema (POST)
+app.post('/api/format', async (req, res) => {
+  // Récupérer les paramètres depuis le query string ou le body
+  const configId = req.query.config || req.query.configId || req.body.configId || req.body.config;
+  const formatParam = req.query.format || req.body.format;
+  const keepEmpty = req.query.keepEmpty !== undefined ? (req.query.keepEmpty === 'true') : (req.body.keepEmpty === true);
+  const schemaInput = req.body.schema;
+
+  // Déterminer les données d'entrée
+  let rawInput = null;
+  if (req.body.input !== undefined) {
+    rawInput = req.body.input;
+  } else if (req.body.data !== undefined) {
+    rawInput = req.body.data;
+  } else if (req.body.formData !== undefined) {
+    rawInput = req.body.formData;
+  } else {
+    // Si aucun wrapper n'est utilisé, tout le body correspond aux valeurs brutes.
+    // On clone l'objet pour pouvoir retirer config/schema/format si présents
+    rawInput = { ...req.body };
+    delete rawInput.config;
+    delete rawInput.configId;
+    delete rawInput.schema;
+    delete rawInput.format;
+    delete rawInput.keepEmpty;
+  }
+
+  if (!rawInput || typeof rawInput !== 'object') {
+    return res.status(400).json({
+      error: "Les données d'entrée sont requises et doivent être un objet JSON à la racine ou enveloppé dans 'input'."
+    });
+  }
+
+  try {
+    let schemaObj = null;
+    let detectedFormat = null;
+    const activeConfigId = configId;
+
+    if (activeConfigId) {
+      const configs = getConfigsList();
+      const selectedConfig = configs.find(c => c.id === activeConfigId);
+      if (!selectedConfig) {
+        return res.status(404).json({ error: `Configuration '${activeConfigId}' non trouvée.` });
+      }
+
+      const schemaResult = await loadSchemaData({
+        sourceType: selectedConfig.sourceType,
+        localPath: selectedConfig.localPath,
+        gitRepoUrl: selectedConfig.gitRepoUrl,
+        gitBranch: selectedConfig.gitBranch,
+        gitToken: selectedConfig.gitToken,
+        gitConfigPath: selectedConfig.gitConfigPath,
+        url: selectedConfig.url,
+        urlIgnoreSsl: selectedConfig.urlIgnoreSsl,
+        refresh: false
+      });
+
+      if (!schemaResult.success) {
+        throw new Error(`Impossible de charger la configuration '${activeConfigId}': ${schemaResult.error || 'Erreur inconnue'}`);
+      }
+
+      schemaObj = schemaResult.data;
+      detectedFormat = schemaResult.format;
+    } else if (schemaInput) {
+      if (typeof schemaInput === 'string') {
+        try {
+          schemaObj = JSON.parse(schemaInput);
+        } catch {
+          try {
+            schemaObj = yaml.load(schemaInput);
+          } catch (yamlErr) {
+            throw new Error(`Impossible de parser le schéma fourni directement (JSON ou YAML attendu): ${yamlErr.message}`);
+          }
+        }
+      } else if (typeof schemaInput === 'object') {
+        schemaObj = schemaInput;
+      } else {
+        return res.status(400).json({
+          success: false,
+          error: "Le schéma doit être un objet ou une chaîne de caractères contenant du JSON ou du YAML."
+        });
+      }
+    } else {
+      const configs = getConfigsList();
+      if (configs.length > 0) {
+        const selectedConfig = configs[0];
+        const schemaResult = await loadSchemaData({
+          sourceType: selectedConfig.sourceType,
+          localPath: selectedConfig.localPath,
+          gitRepoUrl: selectedConfig.gitRepoUrl,
+          gitBranch: selectedConfig.gitBranch,
+          gitToken: selectedConfig.gitToken,
+          gitConfigPath: selectedConfig.gitConfigPath,
+          url: selectedConfig.url,
+          urlIgnoreSsl: selectedConfig.urlIgnoreSsl,
+          refresh: false
+        });
+        schemaObj = schemaResult.data;
+        detectedFormat = schemaResult.format;
+      } else {
+        return res.status(400).json({
+          error: "Aucune configuration par défaut disponible sur le serveur, et aucun schéma n'a été fourni dans la requête."
+        });
+      }
+    }
+
+    let targetSchema = schemaObj;
+    if (Array.isArray(schemaObj)) {
+      if (schemaObj.length === 0) {
+        throw new Error("Le schéma résolu est un tableau vide.");
+      }
+      targetSchema = schemaObj[0].schema || schemaObj[0];
+    }
+
+    const defaults = targetSchema && targetSchema.fields ? getDefaultValues(targetSchema.fields) : {};
+    const mergedInput = mergeDeep(defaults, rawInput);
+
+    let transformedData = { ...mergedInput };
+    if (targetSchema && targetSchema.outputTemplate) {
+      const { transformOutput } = require('./public/lib/transform-engine.js');
+      transformedData = transformOutput(mergedInput, targetSchema.outputTemplate);
+    }
+
+    if (keepEmpty !== true) {
+      transformedData = cleanEmptyValues(transformedData);
+    }
+
+    const requestedFormat = (formatParam || detectedFormat || 'yaml').toLowerCase();
+    let formattedText = '';
+
+    switch (requestedFormat) {
+      case 'json':
+        formattedText = JSON.stringify(transformedData, null, 2);
+        break;
+      case 'hcl':
+      case 'tfvars':
+        formattedText = toHCL(transformedData).trim();
+        if (formattedText === '') {
+          formattedText = '# Aucun champ configuré';
+        }
+        break;
+      case 'yaml':
+      case 'yml':
+      default:
+        formattedText = yaml.dump(transformedData, {
+          indent: 2,
+          noRefs: true,
+          lineWidth: -1
+        });
+        break;
+    }
+
+    let contentType = 'text/plain; charset=utf-8';
+    if (requestedFormat === 'json') {
+      contentType = 'application/json; charset=utf-8';
+    } else if (requestedFormat === 'yaml' || requestedFormat === 'yml') {
+      contentType = 'text/yaml; charset=utf-8';
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.send(formattedText);
+
+  } catch (error) {
+    console.error('[API Format] Erreur lors du formatage :', error);
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
 // Utility helper to navigate objects using dot and bracket notation
 function getValueByPath(obj, pathStr) {
   if (!pathStr) return obj;
