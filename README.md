@@ -81,7 +81,7 @@ L’application propose deux vues qui manipulent exactement les mêmes données.
 Le mode **Graphique** est la vue par défaut. Il est particulièrement adapté aux schémas ayant des objets imbriqués, des listes d’objets ou des objets à clés libres.
 
 1. Faites glisser un bloc de la palette vers le canvas — ou double-cliquez dessus — pour ajouter une instance.
-2. Cliquez sur un nœud pour l’éditer dans le panneau latéral ; les champs simples y sont renseignés comme dans le formulaire classique.
+2. Cliquez sur un nœud pour l’éditer dans le panneau latéral ; les champs simples y sont renseignés comme dans le formulaire classique (l'état "Activé" / "Désactivé" des commutateurs booléens s'actualise instantanément en temps réel).
 3. Pour les tableaux et objets dynamiques, dupliquez, renommez ou supprimez les instances depuis le nœud. Une clé est demandée pour chaque objet dynamique.
 4. Utilisez les boutons du canvas pour recentrer, réinitialiser le zoom ou réorganiser automatiquement les nœuds. Le déplacement du canvas se fait avec un clic droit maintenu et la molette permet de zoomer.
 

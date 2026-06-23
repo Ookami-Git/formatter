@@ -2550,6 +2550,10 @@ class GraphEngine {
         if (targetNode) {
           if (ftype === 'boolean') {
             targetNode.values[fname] = e.target.checked;
+            const labelEl = e.target.closest('.switch-mini')?.querySelector('.switch-mini-label');
+            if (labelEl) {
+              labelEl.textContent = e.target.checked ? 'Activé' : 'Désactivé';
+            }
           } else if (ftype === 'array' && e.target.type === 'checkbox') {
             const current = Array.isArray(targetNode.values[fname]) ? [...targetNode.values[fname]] : [];
             if (e.target.checked) {
@@ -2698,7 +2702,13 @@ class GraphEngine {
       const fname = target.dataset.fieldName;
       const ftype = target.dataset.fieldType;
       if (!fname || ftype === 'array-item') return;
-      if (ftype === 'boolean') node.values[fname] = target.checked;
+      if (ftype === 'boolean') {
+        node.values[fname] = target.checked;
+        const labelEl = target.closest('.switch-mini')?.querySelector('.switch-mini-label');
+        if (labelEl) {
+          labelEl.textContent = target.checked ? 'Activé' : 'Désactivé';
+        }
+      }
       else if (ftype === 'array' && target.type === 'checkbox') {
         const current = Array.isArray(node.values[fname]) ? [...node.values[fname]] : [];
         if (target.checked && !current.includes(target.value)) current.push(target.value);
