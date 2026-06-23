@@ -2,8 +2,8 @@ apiVersion: v2
 name: formatter
 description: Générateur de formulaire dynamique depuis YAML / HCL / JSON — Kubernetes & Docker ready
 type: application
-version: 1.4.0
-appVersion: "1.4.0"
+version: 1.5.0
+appVersion: "1.5.0"
 keywords:
   - form
   - config
