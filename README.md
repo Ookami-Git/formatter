@@ -958,6 +958,51 @@ resources:
 }
 ```
 
+### Récupérer la structure du formulaire (`GET /api/form`)
+
+Permet de récupérer la structure de description pure d'un formulaire sous forme de JSON (contenant les métadonnées de titre, de description, et la liste des définitions de champs `fields`), en éliminant toutes les définitions liées aux templates de transformation et de format de sortie (`outputTemplate`, `outputFormat`).
+
+**Paramètres Query String :**
+
+| Propriété | Type | Description |
+|---|---|---|
+| `config` | `string` | *(Optionnel)* ID de la configuration à récupérer. Si non fourni, charge la configuration par défaut. |
+| `branch` | `string` | *(Optionnel)* Pour les configurations Git, spécifie la branche à interroger. |
+| `refresh` | `boolean` | *(Optionnel)* Si `true`, force la mise à jour (refresh) du dépôt Git de configuration. |
+
+**Exemple de requête :**
+`GET http://localhost:3000/api/form?config=default`
+
+**Réponse (MIME `application/json`) :**
+```json
+{
+  "title": "Configuration Déploiement Microservice",
+  "description": "Un texte explicatif...",
+  "fields": [
+    {
+      "name": "appName",
+      "label": "Nom de l'application",
+      "type": "string",
+      "default": "mon-microservice",
+      "required": true
+    }
+  ]
+}
+```
+
+Si le schéma interrogé est un multi-document (multi-doc), l'API renvoie un tableau listant chaque onglet et la description du formulaire associée épurée :
+```json
+[
+  {
+    "tabName": "Configuration 1",
+    "schema": {
+      "title": "Configuration Déploiement Microservice",
+      "fields": [...]
+    }
+  }
+]
+```
+
 ---
 
 ## 📁 Structure du projet

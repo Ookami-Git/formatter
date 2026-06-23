@@ -589,6 +589,71 @@ app.get('/api/config', async (req, res) => {
   }
 });
 
+// Endpoint to load form schema only, without template and format definitions (GET)
+app.get('/api/form', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+
+  const forceRefresh = req.query.refresh === 'true';
+  const branchParam = req.query.branch;
+  const configId = req.query.config;
+
+  try {
+    const configs = getConfigsList();
+    let selectedConfig = configs.find(c => c.id === configId);
+    if (!selectedConfig) {
+      if (configId) {
+        return res.status(404).json({ success: false, error: `Configuration '${configId}' non trouvée.` });
+      }
+      selectedConfig = configs[0];
+    }
+
+    if (!selectedConfig) {
+      throw new Error("Aucune configuration disponible.");
+    }
+
+    const result = await loadSchemaData({
+      sourceType: selectedConfig.sourceType,
+      localPath: selectedConfig.localPath,
+      gitRepoUrl: selectedConfig.gitRepoUrl,
+      gitBranch: branchParam || selectedConfig.gitBranch,
+      gitToken: selectedConfig.gitToken,
+      gitConfigPath: selectedConfig.gitConfigPath,
+      url: selectedConfig.url,
+      urlIgnoreSsl: selectedConfig.urlIgnoreSsl,
+      refresh: forceRefresh
+    });
+
+    const cleanSchema = (schema) => {
+      if (!schema || typeof schema !== 'object') return schema;
+      const cleaned = { ...schema };
+      delete cleaned.outputTemplate;
+      delete cleaned.outputFormat;
+      return cleaned;
+    };
+
+    let formData;
+    if (result.isMultiDoc) {
+      formData = result.data.map(doc => ({
+        tabName: doc.tabName,
+        schema: cleanSchema(doc.schema)
+      }));
+    } else {
+      formData = cleanSchema(result.data);
+    }
+
+    res.json(formData);
+  } catch (error) {
+    console.error('Error loading form configuration:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+
 // Helper to pre-populate default schema values recursively
 function getDefaultValues(fields) {
   const defaults = {};
